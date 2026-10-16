@@ -20,7 +20,7 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
 
   // Menampilkan modal dialog untuk mengubah harga
   void _tampilkanDialogUbahHarga(int index) {
-    final TextEditingController _hargaController = TextEditingController(
+    final TextEditingController hargaController = TextEditingController(
       text: _produkList[index]['harga'].toString(),
     );
 
@@ -37,7 +37,7 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(
-                controller: _hargaController,
+                controller: hargaController,
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: 'Harga Baru (Rp)',
@@ -58,9 +58,9 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () {
-                if (_hargaController.text.isNotEmpty) {
+                if (hargaController.text.isNotEmpty) {
                   setState(() {
-                    _produkList[index]['harga'] = int.tryParse(_hargaController.text) ?? 0;
+                    _produkList[index]['harga'] = int.tryParse(hargaController.text) ?? 0;
                   });
                   Navigator.pop(context);
                 }
