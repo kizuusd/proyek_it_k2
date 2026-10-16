@@ -26,9 +26,9 @@ class FR05PendapatanScreen extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
             width: double.infinity,
-            child: const Column(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+              children: const [
                 Text('Total Pendapatan (Minggu Ini)', style: TextStyle(color: Colors.white, fontSize: 16)),
                 SizedBox(height: 10),
                 Text('Rp 15.450.000', style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
@@ -52,9 +52,9 @@ class FR05PendapatanScreen extends StatelessWidget {
                   margin: const EdgeInsets.only(bottom: 12),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
                   child: ListTile(
-                    leading: const CircleAvatar(
+                    leading: CircleAvatar(
                       backgroundColor: kPrimaryLightColor,
-                      child: Icon(Icons.receipt_long, color: kPrimaryColor),
+                      child: const Icon(Icons.receipt_long, color: kPrimaryColor),
                     ),
                     title: Text('INV-20260914-00${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
                     subtitle: const Text('14 Sep 2026, 14:30'),

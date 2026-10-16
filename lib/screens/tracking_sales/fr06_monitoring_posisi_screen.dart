@@ -34,39 +34,39 @@ class FR06MonitoringPosisiScreen extends StatelessWidget {
             child: Card(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               elevation: 4,
-              child: const Padding(
-                padding: EdgeInsets.all(20.0),
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Row(
                       children: [
-                        CircleAvatar(
+                        const CircleAvatar(
                           radius: 25,
                           backgroundImage: NetworkImage('https://via.placeholder.com/150'), // Dummy Avatar
                         ),
-                        SizedBox(width: 15),
+                        const SizedBox(width: 15),
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                          children: const [
                             Text('Dimas Brahamsyah', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                             Text('Sales Lapangan - Aktif', style: TextStyle(color: Colors.green)),
                           ],
                         ),
                       ],
                     ),
-                    Divider(height: 30, thickness: 1),
+                    const Divider(height: 30, thickness: 1),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
+                      children: const [
                         Text('Lokasi Terakhir:', style: TextStyle(color: kSecondaryColor)),
                         Text('Jl. Sudirman No. 12', style: TextStyle(fontWeight: FontWeight.bold)),
                       ],
                     ),
-                    SizedBox(height: 10),
+                    const SizedBox(height: 10),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
+                      children: const [
                         Text('Update Waktu:', style: TextStyle(color: kSecondaryColor)),
                         Text('Baru saja', style: TextStyle(fontWeight: FontWeight.bold)),
                       ],

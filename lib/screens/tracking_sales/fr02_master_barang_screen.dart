@@ -23,9 +23,9 @@ class FR02MasterBarangScreen extends StatelessWidget {
             elevation: 2,
             child: ListTile(
               contentPadding: const EdgeInsets.all(16),
-              leading: const CircleAvatar(
+              leading: CircleAvatar(
                 backgroundColor: kPrimaryLightColor,
-                child: Icon(Icons.inventory, color: kPrimaryColor),
+                child: const Icon(Icons.inventory, color: kPrimaryColor),
               ),
               title: Text('Produk ${index + 1}', style: const TextStyle(fontWeight: FontWeight.bold)),
               subtitle: Text('Stok: ${10 * (index + 1)} Box'),

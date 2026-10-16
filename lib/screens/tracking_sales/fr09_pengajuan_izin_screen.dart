@@ -25,7 +25,7 @@ class FR09PengajuanIzinScreen extends StatelessWidget {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               ),
-              initialValue: 'Sakit',
+              value: 'Sakit',
               items: ['Sakit', 'Cuti Tahunan', 'Izin Keperluan Keluarga']
                   .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                   .toList(),

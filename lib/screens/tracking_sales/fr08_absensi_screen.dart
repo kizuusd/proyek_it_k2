@@ -23,11 +23,11 @@ class FR08AbsensiScreen extends StatelessWidget {
               decoration: BoxDecoration(
                 color: Colors.grey[200],
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: kSecondaryColor.withValues(alpha: 0.5)),
+                border: Border.all(color: kSecondaryColor.withOpacity(0.5)),
               ),
-              child: const Column(
+              child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+                children: const [
                   Icon(Icons.camera_alt, size: 60, color: kSecondaryColor),
                   SizedBox(height: 10),
                   Text('Kamera Utama (Selfie Kehadiran)', style: TextStyle(color: kSecondaryColor)),
@@ -35,9 +35,9 @@ class FR08AbsensiScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 30),
-            const Row(
+            Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: [
+              children: const [
                 Icon(Icons.location_on, color: kPrimaryColor),
                 SizedBox(width: 8),
                 Text('Lokasi: Jl. Jend. Sudirman, Jakarta', style: TextStyle(fontWeight: FontWeight.bold)),

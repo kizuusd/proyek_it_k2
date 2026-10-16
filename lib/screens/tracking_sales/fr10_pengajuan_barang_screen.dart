@@ -25,7 +25,7 @@ class FR10PengajuanBarangScreen extends StatelessWidget {
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(20)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
               ),
-              initialValue: 'Produk A',
+              value: 'Produk A',
               items: ['Produk A', 'Produk B', 'Produk C']
                   .map((e) => DropdownMenuItem(value: e, child: Text(e)))
                   .toList(),
