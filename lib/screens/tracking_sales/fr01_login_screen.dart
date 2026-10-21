@@ -405,89 +405,10 @@ class _FR01LoginScreenState extends State<FR01LoginScreen> {
                         ),
                       ),
                       const SizedBox(height: 14),
-
-                      // Divider ATAU
-                      Row(
-                        children: const [
-                          Expanded(child: Divider(color: Colors.black12)),
-                          Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 12),
-                            child: Text('ATAU', style: TextStyle(color: kSecondaryColor, fontSize: 11)),
-                          ),
-                          Expanded(child: Divider(color: Colors.black12)),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Tombol Login Google
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: Colors.grey.shade300),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-                            backgroundColor: const Color(0xFFFAFAFA),
-                          ),
-                          icon: Image.network(
-                            'https://developers.google.com/identity/images/g-logo.png',
-                            width: 20,
-                            height: 20,
-                            errorBuilder: (_, __, ___) => const Icon(Icons.g_mobiledata, color: Colors.red, size: 24),
-                          ),
-                          label: const Text(
-                            'Masuk dengan Google (GMAIL)',
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: kTextColor,
-                            ),
-                          ),
-                          onPressed: authProvider.isLoading ? null : _handleGoogleLogin,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-
-                      // Link ke Registrasi FR12
-                      Center(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text(
-                              'Belum memiliki akun? ',
-                              style: TextStyle(color: kSecondaryColor, fontSize: 13),
-                            ),
-                            GestureDetector(
-                              onTap: () {
-                                authProvider.clearError();
-                                Navigator.pushNamed(context, '/register');
-                              },
-                              child: const Text(
-                                'Daftar Sekarang',
-                                style: TextStyle(
-                                  color: kPrimaryColor,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     ],
                   ),
                 ),
               ),
-
-              const SizedBox(height: 16),
-
-              // Footer Keterangan Tim Kelompok 2
-              const Text(
-                'Proyek TI - Kelompok 2\nDimas B.S.P • Agung P.W. • M. Ulil Abshor',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: kSecondaryColor, fontSize: 11, height: 1.4),
-              ),
-              const SizedBox(height: 12),
             ],
           ),
         ),
