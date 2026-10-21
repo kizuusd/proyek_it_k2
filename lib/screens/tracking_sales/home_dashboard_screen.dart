@@ -13,16 +13,23 @@ import 'fr09_pengajuan_izin_screen.dart';
 import 'fr10_pengajuan_barang_screen.dart';
 import 'fr11_profil_screen.dart';
 
-class HomeDashboardScreen extends StatelessWidget {
+class HomeDashboardScreen extends StatefulWidget {
   const HomeDashboardScreen({Key? key}) : super(key: key);
+
+  @override
+  State<HomeDashboardScreen> createState() => _HomeDashboardScreenState();
+}
+
+class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
+  bool _hasRedirected = false;
 
   void _confirmLogout(BuildContext context) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: const [
+        title: const Row(
+          children: [
             Icon(Icons.logout, color: Colors.redAccent),
             SizedBox(width: 8),
             Text('Konfirmasi Keluar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -60,6 +67,111 @@ class HomeDashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
+
+    // 1. Cek Sesi: Tampilkan indikator saat sistem sedang memvalidasi sesi
+    if (authProvider.isLoading) {
+      return const Scaffold(
+        backgroundColor: Color(0xFFF5F6F9),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(color: kPrimaryColor),
+              SizedBox(height: 16),
+              Text(
+                'Memverifikasi sesi login...',
+                style: TextStyle(color: kSecondaryColor, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // 2. Proteksi Akses: User belum login TIDAK BISA masuk ke Dashboard
+    if (!authProvider.isAuthenticated || authProvider.currentUser == null) {
+      if (!_hasRedirected) {
+        _hasRedirected = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+          }
+        });
+      }
+
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F6F9),
+        body: SafeArea(
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.lock_person_rounded,
+                      size: 64,
+                      color: Colors.redAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Akses Dashboard Dibatasi',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: kTextColor,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Anda belum masuk ke sistem. Silakan login terlebih dahulu untuk mengakses menu dashboard dan data operasional CV Maju Bersama.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: kSecondaryColor),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kPrimaryColor,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      onPressed: () {
+                        Navigator.pushNamedAndRemoveUntil(
+                          context,
+                          '/login',
+                          (route) => false,
+                        );
+                      },
+                      icon: const Icon(Icons.login, color: Colors.white),
+                      label: const Text(
+                        'Masuk ke Akun (Login)',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
     final user = authProvider.currentUser;
 
     final userName = user?.name.isNotEmpty == true ? user!.name : 'Sales Aktif';
@@ -82,7 +194,7 @@ class HomeDashboardScreen extends StatelessWidget {
       {'title': 'Monitoring', 'icon': Icons.my_location, 'page': const FR06MonitoringPosisiScreen()},
       {'title': 'Keanggotaan', 'icon': Icons.people, 'page': const FR07KeanggotaanScreen()},
       {'title': 'Absensi', 'icon': Icons.fingerprint, 'page': const FR08AbsensiScreen()},
-      {'title': 'Form Izin', 'icon': Icons.edit_document, 'page': const FR09PengajuanIzinScreen()},
+      {'title': (user?.isSuperAdmin == true || user?.isAdmin == true) ? 'Daftar Izin' : 'Form Izin', 'icon': Icons.edit_document, 'page': const FR09PengajuanIzinScreen()},
       {'title': 'Req Barang', 'icon': Icons.add_box, 'page': const FR10PengajuanBarangScreen()},
       {'title': 'Profil', 'icon': Icons.person, 'page': const FR11ProfilScreen()},
     ];

@@ -91,10 +91,14 @@ class AuthService {
       if (email is! String || email.isEmpty) {
         throw const FormatException('Data akun lokal tidak valid.');
       }
-      final alreadyExists = _mockUsers.any(
+      final existingIndex = _mockUsers.indexWhere(
         (user) => (user['email'] as String).toLowerCase() == email.toLowerCase(),
       );
-      if (!alreadyExists) _mockUsers.add(userData);
+      if (existingIndex >= 0) {
+        _mockUsers[existingIndex] = userData;
+      } else {
+        _mockUsers.add(userData);
+      }
     }
   }
 
@@ -383,6 +387,129 @@ class AuthService {
 
     await _sessionService.saveSession(authResponse);
     return authResponse;
+  }
+
+  // ============================================================
+  // UPDATE PASSWORD (ROLE SALES & PENGGUNA LAIN)
+  // ============================================================
+  Future<bool> updatePassword({
+    required String email,
+    required String newPassword,
+  }) async {
+    await _ensureMockUsersLoaded();
+    final cleanEmail = email.trim().toLowerCase();
+    final userIndex = _mockUsers.indexWhere(
+      (u) => (u['email'] as String).toLowerCase() == cleanEmail,
+    );
+
+    if (userIndex == -1) {
+      throw Exception('Akun dengan email "$cleanEmail" tidak ditemukan.');
+    }
+
+    _mockUsers[userIndex]['password'] = newPassword;
+    _mockUsers[userIndex]['_persist_locally'] = true;
+    await _saveMockUsers();
+    return true;
+  }
+
+  // ============================================================
+  // UPDATE FOTO PROFIL (SEMUA ROLE: OWNER, ADMIN, SALES)
+  // ============================================================
+  Future<UserModel> updateProfilePhoto({
+    required String email,
+    required String photoUrl,
+  }) async {
+    await _ensureMockUsersLoaded();
+    final cleanEmail = email.trim().toLowerCase();
+    final userIndex = _mockUsers.indexWhere(
+      (u) => (u['email'] as String).toLowerCase() == cleanEmail,
+    );
+
+    if (userIndex == -1) {
+      throw Exception('Akun dengan email "$cleanEmail" tidak ditemukan.');
+    }
+
+    _mockUsers[userIndex]['photo_url'] = photoUrl;
+    _mockUsers[userIndex]['_persist_locally'] = true;
+    await _saveMockUsers();
+
+    final updatedUser = UserModel.fromJson(_mockUsers[userIndex]);
+
+    // Sinkronisasi session lokal jika user yang diedit sedang aktif
+    final currentCached = await _sessionService.getUser();
+    if (currentCached != null && currentCached.email.toLowerCase() == cleanEmail) {
+      final token = await _sessionService.getToken() ?? 'active_token_${updatedUser.id}';
+      await _sessionService.saveSession(
+        AuthResponseModel(token: token, user: updatedUser),
+      );
+    }
+
+    return updatedUser;
+  }
+
+  // ============================================================
+  // UPDATE DATA PROFIL (NAMA, NO HP, FOTO)
+  // ============================================================
+  Future<UserModel> updateUserProfile({
+    required String email,
+    String? name,
+    String? phone,
+    String? photoUrl,
+  }) async {
+    await _ensureMockUsersLoaded();
+    final cleanEmail = email.trim().toLowerCase();
+    final userIndex = _mockUsers.indexWhere(
+      (u) => (u['email'] as String).toLowerCase() == cleanEmail,
+    );
+
+    if (userIndex == -1) {
+      throw Exception('Akun tidak ditemukan.');
+    }
+
+    if (name != null && name.trim().isNotEmpty) {
+      _mockUsers[userIndex]['name'] = name.trim();
+    }
+    if (phone != null) {
+      _mockUsers[userIndex]['phone'] = phone.trim();
+    }
+    if (photoUrl != null) {
+      _mockUsers[userIndex]['photo_url'] = photoUrl;
+    }
+    _mockUsers[userIndex]['_persist_locally'] = true;
+    await _saveMockUsers();
+
+    final updatedUser = UserModel.fromJson(_mockUsers[userIndex]);
+
+    final currentCached = await _sessionService.getUser();
+    if (currentCached != null && currentCached.email.toLowerCase() == cleanEmail) {
+      final token = await _sessionService.getToken() ?? 'active_token_${updatedUser.id}';
+      await _sessionService.saveSession(
+        AuthResponseModel(token: token, user: updatedUser),
+      );
+    }
+
+    return updatedUser;
+  }
+
+  // ============================================================
+  // GET USER SESUAI ROLE (UNTUK SCREEN PROFIL / PREVIEW ROLE)
+  // ============================================================
+  Future<UserModel?> getUserByRole(String role) async {
+    await _ensureMockUsersLoaded();
+    final r = role.toLowerCase();
+    final match = _mockUsers.firstWhere(
+      (u) {
+        final uRole = (u['role'] as String).toLowerCase();
+        if (r == 'owner' || r == 'superadmin') return uRole == 'superadmin';
+        if (r == 'admin' || r == 'administrator') return uRole == 'administrator' || uRole == 'admin';
+        if (r == 'sales') return uRole == 'sales';
+        return uRole == r;
+      },
+      orElse: () => {},
+    );
+
+    if (match.isEmpty) return null;
+    return UserModel.fromJson(match);
   }
 
   // ============================================================

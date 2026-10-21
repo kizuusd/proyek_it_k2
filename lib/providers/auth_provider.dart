@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../models/auth_response_model.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
 import '../services/session_service.dart';
@@ -121,6 +122,118 @@ class AuthProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _status = AuthStatus.error;
+      _errorMessage = _cleanErrorMessage(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // FR11 | Ubah Password (Khusus Sales & Pengguna)
+  Future<bool> updatePassword(String newPassword) async {
+    if (_currentUser == null) {
+      _errorMessage = 'Tidak ada sesi pengguna aktif.';
+      return false;
+    }
+    _status = AuthStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      await _authService.updatePassword(
+        email: _currentUser!.email,
+        newPassword: newPassword,
+      );
+      _status = AuthStatus.authenticated;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _status = AuthStatus.authenticated;
+      _errorMessage = _cleanErrorMessage(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // FR11 | Ubah Foto Profil (Untuk Setiap Role: Owner, Admin, Sales)
+  Future<bool> updateProfilePhoto(String photoUrl) async {
+    if (_currentUser == null) {
+      _errorMessage = 'Tidak ada sesi pengguna aktif.';
+      return false;
+    }
+    _status = AuthStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final updatedUser = await _authService.updateProfilePhoto(
+        email: _currentUser!.email,
+        photoUrl: photoUrl,
+      );
+      _currentUser = updatedUser;
+      _status = AuthStatus.authenticated;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _status = AuthStatus.authenticated;
+      _errorMessage = _cleanErrorMessage(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // FR11 | Ubah Data Profil (Nama, Telepon, dsb)
+  Future<bool> updateProfile({String? name, String? phone, String? photoUrl}) async {
+    if (_currentUser == null) {
+      _errorMessage = 'Tidak ada sesi pengguna aktif.';
+      return false;
+    }
+    _status = AuthStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final updatedUser = await _authService.updateUserProfile(
+        email: _currentUser!.email,
+        name: name,
+        phone: phone,
+        photoUrl: photoUrl,
+      );
+      _currentUser = updatedUser;
+      _status = AuthStatus.authenticated;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _status = AuthStatus.authenticated;
+      _errorMessage = _cleanErrorMessage(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Ganti Role Demo (Admin, Owner, Sales) untuk kemudahan pengujian screen profil
+  Future<bool> switchRoleDemo(String targetRole) async {
+    _status = AuthStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final user = await _authService.getUserByRole(targetRole);
+      if (user != null) {
+        _currentUser = user;
+        final authResponse = AuthResponseModel(
+          token: 'demo_token_${user.id}_${DateTime.now().millisecondsSinceEpoch}',
+          expiresAt: DateTime.now().add(const Duration(days: 7)),
+          user: user,
+        );
+        await _sessionService.saveSession(authResponse);
+        _status = AuthStatus.authenticated;
+        notifyListeners();
+        return true;
+      }
+      _status = AuthStatus.authenticated;
+      return false;
+    } catch (e) {
+      _status = AuthStatus.authenticated;
       _errorMessage = _cleanErrorMessage(e.toString());
       notifyListeners();
       return false;

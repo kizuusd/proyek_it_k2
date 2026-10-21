@@ -114,5 +114,52 @@ void main() {
       expect(newProvider.isAuthenticated, isFalse);
       expect(newProvider.status, AuthStatus.unauthenticated);
     });
+
+    test('FR11 Sales role can change password', () async {
+      final provider = AuthProvider();
+      await provider.login('sales@majubersama.com', 'password123');
+      expect(provider.currentUser?.isSales, isTrue);
+
+      final updateSuccess = await provider.updatePassword('salesnewpassword456');
+      expect(updateSuccess, isTrue);
+
+      // Verify login with new password
+      final freshAuthService = AuthService();
+      final loginResult = await freshAuthService.loginWithEmail(
+        'sales@majubersama.com',
+        'salesnewpassword456',
+      );
+      expect(loginResult.user.email, 'sales@majubersama.com');
+    });
+
+    test('FR11 Update profile photo for roles', () async {
+      final provider = AuthProvider();
+      await provider.login('owner@majubersama.com', 'password123');
+
+      const newPhoto = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d';
+      final photoSuccess = await provider.updateProfilePhoto(newPhoto);
+      expect(photoSuccess, isTrue);
+      expect(provider.currentUser?.photoUrl, newPhoto);
+    });
+
+    test('FR11 Role switching demo loads correct role profiles', () async {
+      final provider = AuthProvider();
+      await provider.login('owner@majubersama.com', 'password123');
+
+      // Switch to Admin
+      await provider.switchRoleDemo('admin');
+      expect(provider.currentUser?.isAdmin, isTrue);
+      expect(provider.currentUser?.name, 'Agung Prasetyo Wibowo');
+
+      // Switch to Sales
+      await provider.switchRoleDemo('sales');
+      expect(provider.currentUser?.isSales, isTrue);
+      expect(provider.currentUser?.name, 'Muhammad Ulil Abshor');
+
+      // Switch to Owner
+      await provider.switchRoleDemo('owner');
+      expect(provider.currentUser?.isSuperAdmin, isTrue);
+      expect(provider.currentUser?.name, 'Dimas Brahamsyah Santosa Putra');
+    });
   });
 }
