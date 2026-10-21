@@ -78,6 +78,13 @@ void main() {
       expect(res.user.name, 'Budi Test Sales');
       expect(res.user.role, 'sales');
       expect(res.user.isActive, isTrue);
+
+      final restartedAuthService = AuthService();
+      final loginAfterRestart = await restartedAuthService.loginWithEmail(
+        'buditest@majubersama.com',
+        'secret123',
+      );
+      expect(loginAfterRestart.user.name, 'Budi Test Sales');
     });
   });
 

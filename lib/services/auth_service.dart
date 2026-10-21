@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/auth_response_model.dart';
 import '../models/user_model.dart';
 import 'session_service.dart';
@@ -8,6 +9,8 @@ import 'session_service.dart';
 class AuthService {
   final SessionService _sessionService = SessionService();
   final GoogleSignIn _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
+  static const String _mockUsersStorageKey = 'auth_mock_users';
+  Future<void>? _mockUsersLoad;
 
   // Base URL konfigurasi REST API backend (Laravel / Node / Go)
   static const String baseUrl = 'http://10.0.2.2:8000/api';
@@ -63,6 +66,52 @@ class AuthService {
     },
   ];
 
+  Future<void> _ensureMockUsersLoaded() {
+    return _mockUsersLoad ??= _loadMockUsers();
+  }
+
+  Future<void> _loadMockUsers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedUsers = prefs.getString(_mockUsersStorageKey);
+    if (storedUsers == null) return;
+
+    final decodedUsers = jsonDecode(storedUsers);
+    if (decodedUsers is! List) {
+      throw const FormatException('Data akun lokal tidak valid.');
+    }
+
+    for (final entry in decodedUsers) {
+      if (entry is! Map) {
+        throw const FormatException('Data akun lokal tidak valid.');
+      }
+      final userData = Map<String, dynamic>.from(entry);
+      if (userData['_persist_locally'] != true) continue;
+
+      final email = userData['email'];
+      if (email is! String || email.isEmpty) {
+        throw const FormatException('Data akun lokal tidak valid.');
+      }
+      final alreadyExists = _mockUsers.any(
+        (user) => (user['email'] as String).toLowerCase() == email.toLowerCase(),
+      );
+      if (!alreadyExists) _mockUsers.add(userData);
+    }
+  }
+
+  Future<void> _saveMockUsers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final storedUsers = _mockUsers
+        .where((user) => user['_persist_locally'] == true)
+        .toList();
+    final saved = await prefs.setString(
+      _mockUsersStorageKey,
+      jsonEncode(storedUsers),
+    );
+    if (!saved) {
+      throw Exception('Akun gagal disimpan di perangkat. Silakan coba lagi.');
+    }
+  }
+
   // ============================================================
   // FR01 | LOGIN WITH EMAIL & PASSWORD
   // ============================================================
@@ -105,6 +154,7 @@ class AuthService {
 
   // Logika Autentikasi Mock
   Future<AuthResponseModel> _loginWithMockEmail(String email, String password) async {
+    await _ensureMockUsersLoaded();
     await Future.delayed(const Duration(milliseconds: 600)); // simulasi latency
 
     final foundIndex = _mockUsers.indexWhere(
@@ -145,6 +195,7 @@ class AuthService {
   // ============================================================
   Future<AuthResponseModel> loginWithGoogle() async {
     try {
+      await _ensureMockUsersLoaded();
       GoogleSignInAccount? googleUser;
       try {
         googleUser = await _googleSignIn.signIn();
@@ -213,6 +264,7 @@ class AuthService {
 
   // Simulasi Google Sign-In untuk pengujian instan
   Future<AuthResponseModel> _loginWithMockGoogle() async {
+    await _ensureMockUsersLoaded();
     await Future.delayed(const Duration(milliseconds: 600));
 
     const googleEmail = 'sales.google@majubersama.com';
@@ -289,6 +341,7 @@ class AuthService {
   }
 
   Future<AuthResponseModel> _registerMock(UserModel user, String password) async {
+    await _ensureMockUsersLoaded();
     await Future.delayed(const Duration(milliseconds: 600));
 
     final cleanEmail = user.email.trim().toLowerCase();
@@ -310,9 +363,16 @@ class AuthService {
       'is_active': 1,  // Default aktif
       'google_id': null,
       'last_login_at': DateTime.now().toIso8601String(),
+      '_persist_locally': true,
     };
 
     _mockUsers.add(newUserData);
+    try {
+      await _saveMockUsers();
+    } catch (_) {
+      _mockUsers.remove(newUserData);
+      rethrow;
+    }
 
     final createdUser = UserModel.fromJson(newUserData);
     final authResponse = AuthResponseModel(
