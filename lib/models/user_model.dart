@@ -7,6 +7,7 @@ class UserModel {
   final String role; // 'superadmin', 'administrator' / 'admin', 'sales'
   final bool isActive;
   final String? googleId;
+  final String? googleEmail;
   final DateTime? lastLoginAt;
 
   const UserModel({
@@ -18,13 +19,19 @@ class UserModel {
     this.role = 'sales',
     this.isActive = true,
     this.googleId,
+    this.googleEmail,
     this.lastLoginAt,
   });
 
-  bool get isSuperAdmin => role.toLowerCase() == 'superadmin';
+  bool get isSuperAdmin =>
+      role.toLowerCase() == 'superadmin' || role.toLowerCase() == 'owner';
   bool get isAdmin =>
       role.toLowerCase() == 'admin' || role.toLowerCase() == 'administrator';
   bool get isSales => role.toLowerCase() == 'sales';
+  bool get isManager => isSuperAdmin || isAdmin;
+  bool get isGoogleLinked => googleId != null && googleId!.isNotEmpty;
+  String get displayGoogleEmail =>
+      googleEmail?.isNotEmpty == true ? googleEmail! : (isGoogleLinked ? email : '');
 
   String get roleDisplayTitle {
     switch (role.toLowerCase()) {
@@ -52,6 +59,7 @@ class UserModel {
           json['isActive'] == true ||
           json['is_active'] == '1',
       googleId: json['google_id'] as String? ?? json['googleId'] as String?,
+      googleEmail: json['google_email'] as String? ?? json['googleEmail'] as String?,
       lastLoginAt: json['last_login_at'] != null
           ? DateTime.tryParse(json['last_login_at'].toString())
           : (json['lastLoginAt'] != null
@@ -70,6 +78,7 @@ class UserModel {
       'role': role,
       'is_active': isActive ? 1 : 0,
       if (googleId != null) 'google_id': googleId,
+      if (googleEmail != null) 'google_email': googleEmail,
       if (lastLoginAt != null) 'last_login_at': lastLoginAt!.toIso8601String(),
     };
   }
@@ -83,6 +92,7 @@ class UserModel {
     String? role,
     bool? isActive,
     String? googleId,
+    String? googleEmail,
     DateTime? lastLoginAt,
   }) {
     return UserModel(
@@ -94,6 +104,7 @@ class UserModel {
       role: role ?? this.role,
       isActive: isActive ?? this.isActive,
       googleId: googleId ?? this.googleId,
+      googleEmail: googleEmail ?? this.googleEmail,
       lastLoginAt: lastLoginAt ?? this.lastLoginAt,
     );
   }

@@ -29,6 +29,11 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated =>
       _status == AuthStatus.authenticated && _currentUser != null;
   bool get isLoading => _status == AuthStatus.loading;
+  bool get useMock => _authService.useMock;
+  set useMock(bool val) {
+    _authService.useMock = val;
+    notifyListeners();
+  }
 
   // Inisialisasi: Auto-login jika session tersimpan di penyimpanan lokal
   Future<void> checkAuthSession() async {
@@ -73,13 +78,13 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // FR01 | Login Google (GMAIL)
-  Future<bool> loginWithGoogle() async {
+  Future<bool> loginWithGoogle({String? testEmail}) async {
     _status = AuthStatus.loading;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final authResponse = await _authService.loginWithGoogle();
+      final authResponse = await _authService.loginWithGoogle(testEmail: testEmail);
       _currentUser = authResponse.user;
       _token = authResponse.token;
       _status = AuthStatus.authenticated;
@@ -93,7 +98,113 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // FR12 | Registrasi Akun Sales Baru
+  // FR12 | Registrasi Akun Sales Khusus oleh Admin & Owner
+  Future<bool> registerSalesAccount({
+    required String name,
+    required String email,
+    required String password,
+    String? phone,
+    bool linkGoogle = false,
+  }) async {
+    if (_currentUser == null || !_currentUser!.isManager) {
+      _errorMessage =
+          'Akses ditolak: Hanya Admin dan Owner yang berhak mendaftarkan akun Sales baru.';
+      notifyListeners();
+      return false;
+    }
+
+    _status = AuthStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final newSales = UserModel(
+        name: name,
+        email: email,
+        phone: phone,
+        role: 'sales',
+        isActive: true,
+      );
+
+      await _authService.registerSalesByManager(
+        managerUser: _currentUser!,
+        newSalesUser: newSales,
+        password: password,
+        linkGoogle: linkGoogle,
+      );
+
+      // Admin/Owner tetap login sebagai currentUser
+      _status = AuthStatus.authenticated;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _status = AuthStatus.authenticated;
+      _errorMessage = _cleanErrorMessage(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Tautkan Akun Google ke Profil Aktif
+  Future<bool> linkGoogleAccount({String? googleEmail, String? photoUrl, String? googleId}) async {
+    if (_currentUser == null) {
+      _errorMessage = 'Tidak ada sesi pengguna aktif.';
+      return false;
+    }
+
+    _status = AuthStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final updatedUser = await _authService.linkGoogleAccount(
+        userId: _currentUser!.id,
+        currentUserEmail: _currentUser!.email,
+        googleEmail: googleEmail,
+        googleId: googleId,
+        photoUrl: photoUrl,
+      );
+      _currentUser = updatedUser;
+      _status = AuthStatus.authenticated;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _status = AuthStatus.authenticated;
+      _errorMessage = _cleanErrorMessage(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Putuskan Tautan Akun Google dari Profil Aktif
+  Future<bool> unlinkGoogleAccount() async {
+    if (_currentUser == null) {
+      _errorMessage = 'Tidak ada sesi pengguna aktif.';
+      return false;
+    }
+
+    _status = AuthStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final updatedUser = await _authService.unlinkGoogleAccount(
+        userId: _currentUser!.id,
+        email: _currentUser!.email,
+      );
+      _currentUser = updatedUser;
+      _status = AuthStatus.authenticated;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _status = AuthStatus.authenticated;
+      _errorMessage = _cleanErrorMessage(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // Registrasi mandiri ditolak sesuai spesifikasi
   Future<bool> register({
     required String name,
     required String email,
@@ -109,14 +220,11 @@ class AuthProvider extends ChangeNotifier {
         name: name,
         email: email,
         phone: phone,
-        role: 'sales', // default sales sesuai spesifikasi
+        role: 'sales',
         isActive: true,
       );
 
-      final authResponse =
-          await _authService.register(newUser, password);
-      _currentUser = authResponse.user;
-      _token = authResponse.token;
+      await _authService.register(newUser, password);
       _status = AuthStatus.authenticated;
       notifyListeners();
       return true;
@@ -126,6 +234,11 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       return false;
     }
+  }
+
+  // Ambil daftar seluruh akun (untuk panel Keanggotaan)
+  Future<List<UserModel>> getAllUsers() async {
+    return await _authService.getAllUsers();
   }
 
   // FR11 | Ubah Password (Khusus Sales & Pengguna)

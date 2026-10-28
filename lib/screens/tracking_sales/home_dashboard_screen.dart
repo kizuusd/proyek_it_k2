@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../../constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/app_drawer.dart';
 import 'fr02_master_barang_screen.dart';
 import 'fr03_master_harga_screen.dart';
 import 'fr04_jadwal_rute_screen.dart';
 import 'fr05_pendapatan_screen.dart';
 import 'fr06_monitoring_posisi_screen.dart';
-import 'fr07_keanggotaan_screen.dart';
 import 'fr08_absensi_screen.dart';
 import 'fr09_pengajuan_izin_screen.dart';
 import 'fr10_pengajuan_barang_screen.dart';
@@ -21,6 +22,7 @@ class HomeDashboardScreen extends StatefulWidget {
 }
 
 class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _hasRedirected = false;
 
   void _confirmLogout(BuildContext context) {
@@ -186,22 +188,17 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
       roleBadgeColor = Colors.teal.shade700;
     }
 
-    final List<Map<String, dynamic>> menuItems = [
-      {'title': 'Master Barang', 'icon': Icons.inventory_2, 'page': const FR02MasterBarangScreen()},
-      {'title': 'Master Harga', 'icon': Icons.monetization_on, 'page': const FR03MasterHargaScreen()},
-      {'title': 'Jadwal Rute', 'icon': Icons.map, 'page': const FR04PenjadwalanRuteScreen()},
-      {'title': 'Pendapatan', 'icon': Icons.account_balance_wallet, 'page': const FR05PendapatanScreen()},
-      {'title': 'Monitoring', 'icon': Icons.my_location, 'page': const FR06MonitoringPosisiScreen()},
-      {'title': 'Keanggotaan', 'icon': Icons.people, 'page': const FR07KeanggotaanScreen()},
-      {'title': 'Absensi', 'icon': Icons.fingerprint, 'page': const FR08AbsensiScreen()},
-      {'title': (user?.isSuperAdmin == true || user?.isAdmin == true) ? 'Daftar Izin' : 'Form Izin', 'icon': Icons.edit_document, 'page': const FR09PengajuanIzinScreen()},
-      {'title': 'Req Barang', 'icon': Icons.add_box, 'page': const FR10PengajuanBarangScreen()},
-      {'title': 'Profil', 'icon': Icons.person, 'page': const FR11ProfilScreen()},
-    ];
-
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: const Color(0xFFF5F6F9),
+      // 3. Sidebar Menu (Drawer) yang memuat seluruh menu utama aplikasi
+      drawer: const AppDrawer(currentRoute: 'dashboard'),
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.menu_rounded, color: kTextColor),
+          tooltip: 'Menu',
+          onPressed: () => _scaffoldKey.currentState?.openDrawer(),
+        ),
         title: const Text(
           'Dashboard Sales',
           style: TextStyle(color: kTextColor, fontWeight: FontWeight.bold),
@@ -211,6 +208,16 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         centerTitle: false,
         actions: [
           IconButton(
+            icon: const Icon(Icons.person_outline, color: kPrimaryColor),
+            tooltip: 'Profil Saya',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const FR11ProfilScreen()),
+              );
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.logout, color: Colors.redAccent),
             tooltip: 'Logout',
             onPressed: () => _confirmLogout(context),
@@ -218,97 +225,215 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            // Banner Profil Dinamis dari AuthProvider
-            Container(
-              padding: const EdgeInsets.all(20),
-              margin: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: kPrimaryGradientColor,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: kPrimaryColor.withOpacity(0.3),
-                    blurRadius: 10,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // Avatar
-                  CircleAvatar(
-                    radius: 30,
-                    backgroundColor: Colors.white,
-                    backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
-                        ? NetworkImage(user.photoUrl!)
-                        : null,
-                    child: user?.photoUrl == null || user!.photoUrl!.isEmpty
-                        ? Text(
-                            userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                            style: const TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.bold,
-                              color: kPrimaryColor,
-                            ),
-                          )
-                        : null,
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(bottom: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Banner Profil Dinamis dari AuthProvider
+              Container(
+                padding: const EdgeInsets.all(20),
+                margin: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: kPrimaryGradientColor,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: kPrimaryColor.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    Row(
                       children: [
-                        Text(
-                          'Halo, $userName!',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        // Avatar
+                        CircleAvatar(
+                          radius: 30,
+                          backgroundColor: Colors.white,
+                          backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
+                              ? NetworkImage(user.photoUrl!)
+                              : null,
+                          child: user?.photoUrl == null || user!.photoUrl!.isEmpty
+                              ? Text(
+                                  userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
+                                  style: const TextStyle(
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.bold,
+                                    color: kPrimaryColor,
+                                  ),
+                                )
+                              : null,
                         ),
-                        const SizedBox(height: 6),
-                        // Role Badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: roleBadgeColor.withOpacity(0.85),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: Colors.white54),
+                        const SizedBox(width: 15),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Halo, $userName!',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              // Role Badge & Google Link Status
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: roleBadgeColor.withValues(alpha: 0.85),
+                                      borderRadius: BorderRadius.circular(20),
+                                      border: Border.all(color: Colors.white54),
+                                    ),
+                                    child: Text(
+                                      userRole,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                  if (user?.googleId != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.2),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: Colors.white54),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SvgPicture.asset('assets/icons/google-icon.svg', width: 12, height: 12),
+                                          const SizedBox(width: 4),
+                                          const Text(
+                                            'Google Terhubung',
+                                            style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                user?.email ?? 'CV Maju Bersama',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                            ],
                           ),
-                          child: Text(
-                            userRole,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          user?.email ?? 'CV Maju Bersama',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 16),
+                  ],
+                ),
               ),
-            ),
+              if (user?.isSales == true && user?.googleId == null) ...[
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.shade50,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.amber.shade300),
+                  ),
+                  child: Row(
+                    children: [
+                      SvgPicture.asset('assets/icons/google-icon.svg', width: 28, height: 28),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Tautkan Akun Google Anda',
+                              style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: kTextColor),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Masuk cepat di lapangan tanpa perlu ketik kata sandi.',
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                            ),
+                          ],
+                        ),
+                      ),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: kPrimaryColor,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const FR11ProfilScreen()),
+                          );
+                        },
+                        child: const Text('Tautkan', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold)),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ] else ...[
+                const SizedBox(height: 20),
+              ],
 
-            // Text Kategori Menu
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20.0),
-              child: Align(
-                alignment: Alignment.centerLeft,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Menu Navigasi FR (Tracking Sales)',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: kTextColor,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => _scaffoldKey.currentState?.openDrawer(),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.menu_open_rounded, size: 16, color: kPrimaryColor),
+                          SizedBox(width: 4),
+                          Text(
+                            'Buka Sidebar Menu (10 Modul)',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: kPrimaryColor),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20.0),
                 child: Text(
-                  'Menu Navigasi FR (Tracking Sales)',
+                  'Ringkasan Kinerja Hari Ini',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -316,73 +441,302 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
+              const SizedBox(height: 10),
 
-            // Grid Menu
-            Expanded(
-              child: GridView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: GridView.count(
+                  crossAxisCount: 2,
                   crossAxisSpacing: 12,
                   mainAxisSpacing: 12,
-                  childAspectRatio: 0.85,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  childAspectRatio: 1.45,
+                  children: [
+                    _buildKpiCard(
+                      icon: Icons.account_balance_wallet,
+                      iconBgColor: Colors.blue.shade50,
+                      iconColor: Colors.blue.shade700,
+                      title: 'Pendapatan Minggu Ini',
+                      value: 'Rp 15.450.000',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const FR05PendapatanScreen()),
+                        );
+                      },
+                    ),
+                    _buildKpiCard(
+                      icon: Icons.map,
+                      iconBgColor: Colors.green.shade50,
+                      iconColor: Colors.green.shade700,
+                      title: 'Jadwal Rute',
+                      value: '5 Titik Kunjungan',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const FR04PenjadwalanRuteScreen()),
+                        );
+                      },
+                    ),
+                    _buildKpiCard(
+                      icon: Icons.fingerprint,
+                      iconBgColor: Colors.teal.shade50,
+                      iconColor: Colors.teal.shade700,
+                      title: 'Status Presensi',
+                      value: 'Hadir (07:45 WIB)',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const FR08AbsensiScreen()),
+                        );
+                      },
+                    ),
+                    _buildKpiCard(
+                      icon: Icons.assignment_turned_in,
+                      iconBgColor: Colors.purple.shade50,
+                      iconColor: Colors.purple.shade700,
+                      title: 'Status Perizinan',
+                      value: 'Terverifikasi',
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const FR09PengajuanIzinScreen()),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-                itemCount: menuItems.length,
-                itemBuilder: (context, index) {
-                  return GestureDetector(
-                    onTap: () {
-                      Navigator.push(
+              ),
+
+              const SizedBox(height: 22),
+
+              // Bagian Akses Cepat Modul Utama
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20.0),
+                child: Text(
+                  'Akses Cepat',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: kTextColor,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    _buildQuickActionBtn(
+                      icon: Icons.inventory_2,
+                      label: 'Barang',
+                      onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => menuItems[index]['page']),
-                      );
-                    },
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(15),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.1),
-                            spreadRadius: 1,
-                            blurRadius: 5,
-                          ),
-                        ],
-                      ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: const BoxDecoration(
-                              color: kPrimaryLightColor,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              menuItems[index]['icon'],
-                              color: kPrimaryColor,
-                              size: 28,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            menuItems[index]['title'],
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: kTextColor,
-                            ),
-                          ),
-                        ],
+                        MaterialPageRoute(builder: (context) => const FR02MasterBarangScreen()),
                       ),
                     ),
-                  );
-                },
+                    const SizedBox(width: 10),
+                    _buildQuickActionBtn(
+                      icon: Icons.monetization_on,
+                      label: 'Harga',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const FR03MasterHargaScreen()),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _buildQuickActionBtn(
+                      icon: Icons.my_location,
+                      label: 'Monitoring',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const FR06MonitoringPosisiScreen()),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _buildQuickActionBtn(
+                      icon: Icons.add_shopping_cart,
+                      label: 'Req Barang',
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const FR10PengajuanBarangScreen()),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+
+              const SizedBox(height: 22),
+
+              // Kartu Pengumuman / Status Operasional
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withValues(alpha: 0.08),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 20, color: Colors.blue.shade700),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Info Operasional CV Maju Bersama',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: kTextColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '• Pastikan selalu mencatat absensi dan update titik rute kunjungan toko harian.\n'
+                      '• Menu lengkap seluruh fitur aplikasi dapat diakses kapan saja melalui Sidebar Menu.\n'
+                      '• Untuk bantuan teknis hubungi bagian Administrator.',
+                      style: TextStyle(fontSize: 12, color: kSecondaryColor, height: 1.5),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKpiCard({
+    required IconData icon,
+    required Color iconBgColor,
+    required Color iconColor,
+    required String title,
+    required String value,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withValues(alpha: 0.08),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
           ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: iconBgColor,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 18),
+                ),
+                const Spacer(),
+                const Icon(Icons.arrow_forward_ios, size: 12, color: kSecondaryColor),
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: kTextColor,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: kSecondaryColor,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickActionBtn({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withValues(alpha: 0.08),
+                blurRadius: 6,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  color: kPrimaryLightColor,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: kPrimaryColor, size: 20),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  color: kTextColor,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

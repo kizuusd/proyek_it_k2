@@ -1,4 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../../constants.dart';
 import '../../models/user_model.dart';
@@ -329,7 +333,7 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Row(
+        title: Row(
           children: [
             Icon(Icons.edit, color: kPrimaryColor),
             SizedBox(width: 8),
@@ -397,6 +401,277 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
   }
 
   // ============================================================
+  // TAUTKAN & PUTUSKAN AKUN GOOGLE (GMAIL)
+  // ============================================================
+  Future<void> _performNativeGoogleLink(BuildContext context) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.currentUser;
+    if (user == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+
+    try {
+      final googleSignIn = GoogleSignIn(
+        clientId: kIsWeb
+            ? '548808151397-2119mf63filiaftlt7tvpqlvd5klvqia.apps.googleusercontent.com'
+            : null,
+        scopes: ['email', 'profile'],
+      );
+
+      final gUser = await googleSignIn.signIn();
+      if (gUser == null) {
+        // Pengguna membatalkan dialog pemilihan akun Google
+        return;
+      }
+
+      final ok = await authProvider.linkGoogleAccount(
+        googleEmail: gUser.email,
+        googleId: gUser.id,
+        photoUrl: gUser.photoUrl,
+      );
+
+      if (!mounted) return;
+      if (ok) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Akun Google (${gUser.email}) berhasil ditautkan ke akun Anda!'),
+            backgroundColor: Colors.green,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(authProvider.errorMessage ?? 'Gagal menautkan akun Google.'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Gagal memilih akun Google: $e'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _showManualLinkDialog(BuildContext context) {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.currentUser;
+    if (user == null) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    final emailController = TextEditingController(
+      text: user.googleEmail?.isNotEmpty == true
+          ? user.googleEmail
+          : (user.email.endsWith('@gmail.com') ? user.email : ''),
+    );
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            SvgPicture.asset('assets/icons/google-icon.svg', width: 22, height: 22),
+            const SizedBox(width: 10),
+            Text(
+              user.isSales ? 'Tautkan Akun Google Sales' : 'Tautkan Akun Google',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              user.isSales
+                  ? 'Sebagai Sales Lapangan, tautkan akun Google (Gmail) agar Anda dapat masuk ke aplikasi secara instan dengan satu kali klik tanpa perlu memasukkan kata sandi setiap saat.'
+                  : 'Masukkan email Google (Gmail) yang ingin Anda tautkan dengan akun CV Maju Bersama:',
+              style: const TextStyle(fontSize: 13, color: kTextColor, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: emailController,
+              keyboardType: TextInputType.emailAddress,
+              decoration: InputDecoration(
+                labelText: 'Email Akun Google (Gmail)',
+                hintText: 'nama.sales@gmail.com',
+                prefixIcon: const Icon(Icons.email_outlined, color: kPrimaryColor),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                side: BorderSide(color: Colors.grey.shade300),
+              ),
+              onPressed: () async {
+                try {
+                  final googleSignIn = GoogleSignIn(
+                    clientId: kIsWeb
+                        ? '548808151397-2119mf63filiaftlt7tvpqlvd5klvqia.apps.googleusercontent.com'
+                        : null,
+                    scopes: ['email', 'profile'],
+                  );
+                  final gUser = await googleSignIn.signIn();
+                  if (gUser != null) {
+                    emailController.text = gUser.email;
+                  }
+                } catch (e) {
+                  debugPrint('Google Sign In Picker Error: $e');
+                }
+              },
+              icon: SvgPicture.asset('assets/icons/google-icon.svg', width: 16, height: 16),
+              label: const Text(
+                'Pilih Akun Google Asli (Dialog Google)',
+                style: TextStyle(fontSize: 12, color: kTextColor, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () {
+                emailController.text = user.email;
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.touch_app, size: 14, color: kPrimaryColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Gunakan email saat ini (${user.email})',
+                      style: const TextStyle(fontSize: 11.5, color: kPrimaryColor, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Batal', style: TextStyle(color: kSecondaryColor)),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: kPrimaryColor,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.link, size: 18, color: Colors.white),
+            label: const Text('Tautkan Akun', style: TextStyle(color: Colors.white)),
+            onPressed: () async {
+              final email = emailController.text.trim();
+              if (email.isEmpty) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Silakan masukkan alamat email Gmail yang ingin ditautkan.'),
+                    backgroundColor: Colors.redAccent,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(dialogCtx);
+              final ok = await authProvider.linkGoogleAccount(googleEmail: email);
+              if (!mounted) return;
+              if (ok) {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text('Akun Google ($email) berhasil ditautkan ke akun Anda!'),
+                    backgroundColor: Colors.green,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } else {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(authProvider.errorMessage ?? 'Gagal menautkan akun Google.'),
+                    backgroundColor: Colors.redAccent,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _handleLinkGoogle(BuildContext context) {
+    _performNativeGoogleLink(context);
+  }
+
+  void _handleUnlinkGoogle(BuildContext context) async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.link_off, color: Colors.redAccent),
+            SizedBox(width: 8),
+            Text('Putuskan Tautan Google', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: const Text(
+          'Apakah Anda yakin ingin memutuskan tautan akun Google? Anda tetap dapat masuk menggunakan email dan password biasa.',
+          style: TextStyle(fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Batal', style: TextStyle(color: kSecondaryColor)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.redAccent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () async {
+              Navigator.pop(dialogCtx);
+              final ok = await authProvider.unlinkGoogleAccount();
+              if (!mounted) return;
+              if (ok) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text('Tautan Akun Google telah diputuskan.'),
+                    backgroundColor: Colors.orange,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              } else {
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(authProvider.errorMessage ?? 'Gagal memutuskan tautan akun Google.'),
+                    backgroundColor: Colors.redAccent,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Putuskan', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
   // KONFIRMASI LOGOUT
   // ============================================================
   void _confirmLogout(BuildContext context) {
@@ -405,7 +680,7 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Row(
-          children: const [
+          children: [
             Icon(Icons.logout, color: Colors.redAccent),
             SizedBox(width: 8),
             Text('Konfirmasi Keluar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
@@ -913,6 +1188,153 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
               ),
             ),
 
+            const SizedBox(height: 14),
+
+            // INTEGRASI AKUN GOOGLE (GMAIL)
+            // ============================================================
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: isSalesRole && user?.googleId == null
+                    ? Border.all(color: Colors.amber.shade400, width: 1.5)
+                    : (isSalesRole && user?.googleId != null
+                        ? Border.all(color: Colors.green.shade300, width: 1.5)
+                        : null),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withValues(alpha: 0.08),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        SvgPicture.asset(
+                          'assets/icons/google-icon.svg',
+                          width: 22,
+                          height: 22,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            isSalesRole ? 'Tautan Akun Google Sales' : 'Akun Google (Gmail)',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.bold,
+                              color: kTextColor,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: user?.googleId != null ? Colors.green.shade50 : Colors.amber.shade50,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: user?.googleId != null ? Colors.green.shade200 : Colors.amber.shade300,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                user?.googleId != null ? Icons.check_circle : Icons.warning_amber_rounded,
+                                size: 12,
+                                color: user?.googleId != null ? Colors.green.shade700 : Colors.amber.shade800,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                user?.googleId != null ? 'Terhubung' : 'Belum Terhubung',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: user?.googleId != null ? Colors.green.shade700 : Colors.amber.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      user?.googleId != null
+                          ? 'Akun Google aktif ditautkan (${user?.displayGoogleEmail}). Sebagai Sales Lapangan, Anda dapat langsung masuk dengan 1-klik melalui tombol "Masuk dengan Google" tanpa perlu mengetik kata sandi di lapangan.'
+                          : 'Akun Sales Anda belum ditautkan ke Google. Tautkan akun Gmail Anda agar dapat langsung login secara instan dan aman di lapangan tanpa perlu memasukkan kata sandi setiap saat.',
+                      style: const TextStyle(fontSize: 12, color: kSecondaryColor, height: 1.4),
+                    ),
+                    const SizedBox(height: 14),
+                    if (user?.googleId != null) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: Colors.red.shade300),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: () => _handleUnlinkGoogle(context),
+                          icon: const Icon(Icons.link_off, size: 18, color: Colors.redAccent),
+                          label: const Text(
+                            'Putuskan Tautan Akun Google',
+                            style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            side: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          onPressed: () => _performNativeGoogleLink(context),
+                          icon: SvgPicture.asset('assets/icons/google-icon.svg', width: 20, height: 20),
+                          label: const Text(
+                            'Tautkan dengan Akun Google',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: kTextColor,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Center(
+                        child: TextButton.icon(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          onPressed: () => _showManualLinkDialog(context),
+                          icon: const Icon(Icons.edit_outlined, size: 14, color: kSecondaryColor),
+                          label: const Text(
+                            'Atau tautkan manual dengan memasukkan email',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: kSecondaryColor,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 14),
 
             // ============================================================
