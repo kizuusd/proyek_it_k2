@@ -5,7 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shop_app/main.dart';
 import 'package:shop_app/providers/auth_provider.dart';
 import 'package:shop_app/routes.dart';
+import 'package:shop_app/screens/tracking_sales/fr02_master_barang_screen.dart';
 import 'package:shop_app/screens/tracking_sales/fr09_pengajuan_izin_screen.dart';
+import 'package:shop_app/screens/tracking_sales/fr10_pengajuan_barang_screen.dart';
 import 'package:shop_app/screens/tracking_sales/fr11_profil_screen.dart';
 import 'package:shop_app/screens/tracking_sales/fr12_register_screen.dart';
 import 'package:shop_app/screens/tracking_sales/home_dashboard_screen.dart';
@@ -69,7 +71,7 @@ void main() {
     expect(find.text('Akses Dashboard Dibatasi'), findsOneWidget);
     expect(find.text('Masuk ke Akun (Login)'), findsOneWidget);
     // Menu privat tidak tampil untuk user yang belum login
-    expect(find.text('Menu Navigasi FR (Tracking Sales)'), findsNothing);
+    expect(find.text('Ringkasan Kinerja Hari Ini'), findsNothing);
   });
 
   testWidgets('Dashboard allows authenticated user to view menu and profile banner',
@@ -94,7 +96,7 @@ void main() {
 
     // User yang sudah login dapat mengakses dashboard
     expect(find.text('Akses Dashboard Dibatasi'), findsNothing);
-    expect(find.text('Menu Navigasi FR (Tracking Sales)'), findsOneWidget);
+    expect(find.text('Ringkasan Kinerja Hari Ini'), findsOneWidget);
     expect(find.text('Halo, Dimas Brahamsyah Santosa Putra!'), findsOneWidget);
     expect(find.text('Superadmin (Owner)'), findsOneWidget);
   });
@@ -259,7 +261,8 @@ void main() {
     expect(find.descendant(of: drawerFinder, matching: find.text('Master Barang')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Master Harga')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Jadwal Rute')), findsOneWidget);
-    expect(find.descendant(of: drawerFinder, matching: find.text('Pengajuan Barang (Req)')), findsOneWidget);
+    // Menu Pengajuan Barang tidak ditampilkan untuk role Owner & Admin
+    expect(find.descendant(of: drawerFinder, matching: find.text('Pengajuan Barang (Req)')), findsNothing);
 
     expect(find.descendant(of: drawerFinder, matching: find.text('OPERASIONAL SALES')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Pendapatan Sales')), findsOneWidget);
@@ -281,6 +284,11 @@ void main() {
 
     // Layar Master Barang berhasil terbuka
     expect(find.text('Master Barang Sales'), findsOneWidget);
+
+    // Tekan tombol Back di AppBar -> langsung kembali ke Dashboard Sales dalam sekali klik
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('Dashboard Sales'), findsOneWidget);
   });
 
   testWidgets('Sidebar menu can also be opened via Quick Action button on Dashboard',
@@ -309,10 +317,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Klik tombol "Buka Sidebar Menu (10 Modul)" di dashboard
-    final openSidebarBtn = find.text('Buka Sidebar Menu (10 Modul)');
-    expect(openSidebarBtn, findsOneWidget);
-    await tester.tap(openSidebarBtn);
+    // Buka sidebar menu melalui tombol hamburger di AppBar
+    final hamburgerFinder = find.byIcon(Icons.menu_rounded);
+    expect(hamburgerFinder, findsOneWidget);
+    await tester.tap(hamburgerFinder);
     await tester.pumpAndSettle();
 
     final drawerFinder = find.byType(Drawer);
@@ -321,8 +329,10 @@ void main() {
     // Verifikasi drawer terbuka dan role sales ditampilkan di dalam header drawer
     expect(find.descendant(of: drawerFinder, matching: find.text('Muhammad Ulil Abshor')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Sales Lapangan')), findsOneWidget);
+    expect(find.descendant(of: drawerFinder, matching: find.text('Pengajuan Barang (Req)')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Pengajuan Izin Sales')), findsOneWidget);
-    // Menu Daftarkan Sales Baru TIDAK TAMPIL untuk role Sales
+    // Menu Master Barang dan Daftarkan Sales Baru TIDAK TAMPIL untuk role Sales
+    expect(find.descendant(of: drawerFinder, matching: find.text('Master Barang')), findsNothing);
     expect(find.descendant(of: drawerFinder, matching: find.text('Daftarkan Sales Baru')), findsNothing);
   });
 
@@ -382,5 +392,171 @@ void main() {
 
     expect(find.text('Terhubung'), findsOneWidget);
     expect(find.text('Putuskan Tautan Akun Google'), findsOneWidget);
+  });
+
+  testWidgets('FR10 Sales can submit stock request via Ajukan Barang without Tambah Barang button',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final salesProvider = AuthProvider();
+    await tester.runAsync(() async {
+      await salesProvider.login('sales@majubersama.com', 'password123');
+    });
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: salesProvider),
+        ],
+        child: const MaterialApp(
+          home: FR10PengajuanBarangScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verifikasi tombol Tambah Barang sudah dihapus untuk Sales dan diganti dengan Ajukan Barang
+    expect(find.text('Profil Sales'), findsOneWidget);
+    expect(find.text('Pengajuan Stok'), findsWidgets);
+    expect(find.text('Belum ada data pengajuan stok pada filter ini.'), findsOneWidget);
+    expect(find.text('Tambah Barang'), findsNothing);
+    expect(find.text('Ajukan Pengajuan'), findsNothing);
+    expect(find.text('Ajukan Barang'), findsOneWidget);
+    expect(find.text('Ajukan Pengajuan Barang'), findsNothing);
+
+    // 2. Uji Sales membuka pop-up "Ajukan Barang" dan mengirim pengajuan stok
+    await tester.tap(find.text('Ajukan Barang'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ajukan Pengajuan Barang'), findsOneWidget);
+
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'Plastik Kresek 1kg',
+    );
+    await tester.enterText(
+      find.byType(TextFormField).at(1),
+      '5',
+    );
+    await tester.enterText(
+      find.byType(TextFormField).at(2),
+      'Stok plastik di toko hampir habis, mohon untuk ditambahkan.',
+    );
+    await tester.tap(find.text('Kirim Pengajuan'));
+    await tester.pumpAndSettle();
+
+    // Pop-up tertutup dan data masuk ke tabel dengan status Menunggu
+    expect(find.text('Ajukan Pengajuan Barang'), findsNothing);
+    expect(find.text('Menunggu'), findsWidgets);
+  });
+
+  testWidgets('FR02 & FR10 Sales, Admin, and Owner can add products and approve sales stock requests',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final adminProvider = AuthProvider();
+    await tester.runAsync(() async {
+      await adminProvider.login('admin@majubersama.com', 'password123');
+    });
+
+    // 1. Uji Manajemen Produk (FR02) untuk Admin / Owner & Sales
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: adminProvider),
+        ],
+        child: const MaterialApp(
+          home: FR02MasterBarangScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Profil Admin'), findsOneWidget);
+    expect(find.text('Manajemen Produk'), findsOneWidget);
+    expect(find.text('Tambah Barang'), findsOneWidget);
+    // Pastikan form tidak tampil di bawah tabel sebelum pop-up dibuka
+    expect(find.text('Simpan Produk'), findsNothing);
+
+    // Buka pop-up Tambah Barang lalu tutup (close X) -> pastikan hilang dan tidak tampil di bawahnya
+    await tester.tap(find.text('Tambah Barang'));
+    await tester.pumpAndSettle();
+    expect(find.text('Simpan Produk'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.close));
+    await tester.pumpAndSettle();
+    expect(find.text('Simpan Produk'), findsNothing);
+
+    // Buka kembali pop-up Tambah Barang dan simpan produk baru
+    await tester.tap(find.text('Tambah Barang'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.byType(TextFormField).at(1),
+      'Plastik PP 25x35',
+    );
+    await tester.enterText(
+      find.byType(TextFormField).at(3),
+      '50',
+    );
+    await tester.tap(find.text('Simpan Produk'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Simpan Produk'), findsNothing);
+    expect(find.text('Plastik PP 25x35'), findsWidgets);
+
+    // 2. Uji Pengajuan Stok oleh Sales di FR10, lalu Persetujuan oleh Admin/Owner di FR02
+    final salesProvider = AuthProvider();
+    await tester.runAsync(() async {
+      await salesProvider.login('sales@majubersama.com', 'password123');
+    });
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: salesProvider),
+        ],
+        child: const MaterialApp(
+          home: FR10PengajuanBarangScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Ajukan Barang'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(0), '5');
+    await tester.enterText(find.byType(TextFormField).at(1), 'Kebutuhan stok kanvas sales');
+    await tester.tap(find.text('Kirim Pengajuan'));
+    await tester.pumpAndSettle();
+
+    // 3. Admin / Owner membuka Master Barang (FR02) dan menyetujui pengajuan stok dari Sales
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: adminProvider),
+        ],
+        child: MaterialApp(
+          home: FR02MasterBarangScreen(key: UniqueKey()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Setujui & Tambah Stok'), findsWidgets);
+    await tester.tap(find.text('Setujui & Tambah Stok').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Setujui & Tambah Stok'), findsNothing);
   });
 }

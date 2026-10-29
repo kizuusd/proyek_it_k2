@@ -1,12 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:flutter_svg/flutter_svg.dart';
-import 'package:flutter_svg/flutter_svg.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../constants.dart';
-import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/user_avatar.dart';
 
 class FR11ProfilScreen extends StatefulWidget {
   const FR11ProfilScreen({Key? key}) : super(key: key);
@@ -24,43 +25,72 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
   bool _obscureConfirmPassword = true;
   bool _isSavingPassword = false;
 
-  // Preset Avatar untuk ganti foto profil setiap role
-  final List<Map<String, String>> _avatarPresets = [
-    {
-      'name': 'Owner / Direktur',
-      'url': 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&fit=crop&crop=faces',
-    },
-    {
-      'name': 'Administrator',
-      'url': 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&fit=crop&crop=faces',
-    },
-    {
-      'name': 'Sales Lapangan 1',
-      'url': 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&fit=crop&crop=faces',
-    },
-    {
-      'name': 'Sales Lapangan 2',
-      'url': 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=200&fit=crop&crop=faces',
-    },
-    {
-      'name': 'Sales Lapangan 3',
-      'url': 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&fit=crop&crop=faces',
-    },
-    {
-      'name': 'Eksekutif',
-      'url': 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=200&fit=crop&crop=faces',
-    },
-    {
-      'name': 'Foto Bawaan Brand',
-      'url': 'assets/images/Profile Image.png',
-    },
-  ];
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void dispose() {
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  // ============================================================
+  // UPLOAD FILE GAMBAR PROFIL (DARI KAMERA / GALERI)
+  // ============================================================
+  Future<void> _pickAndUploadImage(ImageSource source) async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: source,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 80,
+      );
+
+      if (pickedFile == null || !mounted) return;
+
+      final messenger = ScaffoldMessenger.of(context);
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+
+      final bytes = await pickedFile.readAsBytes();
+      final base64Image = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+
+      final ok = await authProvider.updateProfilePhoto(base64Image);
+      if (!mounted) return;
+
+      if (ok) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 20),
+                SizedBox(width: 10),
+                Expanded(child: Text('Foto profil berhasil diperbarui dari file!')),
+              ],
+            ),
+            backgroundColor: const Color(0xFF047857),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(authProvider.errorMessage ?? 'Gagal memperbarui foto profil.'),
+            backgroundColor: Colors.redAccent,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Gagal memilih file gambar: $e'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   // ============================================================
@@ -83,8 +113,8 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
       _newPasswordController.clear();
       _confirmPasswordController.clear();
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
+        SnackBar(
+          content: const Row(
             children: [
               Icon(Icons.check_circle, color: Colors.white),
               SizedBox(width: 10),
@@ -93,8 +123,9 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
               ),
             ],
           ),
-          backgroundColor: Colors.green,
+          backgroundColor: const Color(0xFF047857),
           behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     } else {
@@ -119,284 +150,150 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
   }
 
   // ============================================================
-  // LOGIKA UBAH FOTO PROFIL (UNTUK SETIAP ROLE)
+  // POP-UP DIALOG UBAH FOTO PROFIL (KAMERA, FOTO, BATAL)
   // ============================================================
   void _showChangePhotoModal(BuildContext context) {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    final messenger = ScaffoldMessenger.of(context);
-    final urlController = TextEditingController();
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            top: 20,
-            left: 20,
-            right: 20,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Row(
-                  children: [
-                    Icon(Icons.add_a_photo, color: kPrimaryColor),
-                    SizedBox(width: 10),
-                    Text(
-                      'Ubah Foto Profil',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: kTextColor,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Fitur ini dapat digunakan oleh setiap role (Admin, Owner, dan Sales).',
-                  style: TextStyle(fontSize: 13, color: kSecondaryColor),
-                ),
-                const SizedBox(height: 20),
-
-                // Pilihan Preset Avatar
-                const Text(
-                  'Pilih dari Koleksi Avatar Preset:',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: kTextColor,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 90,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _avatarPresets.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (context, index) {
-                      final item = _avatarPresets[index];
-                      final isAsset = item['url']!.startsWith('assets/');
-                      return GestureDetector(
-                        onTap: () async {
-                          Navigator.pop(ctx);
-                          final ok = await authProvider.updateProfilePhoto(item['url']!);
-                          if (ok && mounted) {
-                            messenger.showSnackBar(
-                              SnackBar(
-                                content: Text('Foto profil berhasil diubah ke ${item['name']}!'),
-                                backgroundColor: Colors.green,
-                                behavior: SnackBarBehavior.floating,
-                              ),
-                            );
-                          }
-                        },
-                        child: Column(
-                          children: [
-                            CircleAvatar(
-                              radius: 28,
-                              backgroundColor: kPrimaryLightColor,
-                              backgroundImage: isAsset
-                                  ? AssetImage(item['url']!) as ImageProvider
-                                  : NetworkImage(item['url']!),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              item['name']!.split(' ')[0],
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-                const Divider(),
-                const SizedBox(height: 10),
-
-                // Input URL Foto Kustom
-                const Text(
-                  'Atau Masukkan URL Gambar Kustom:',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: kTextColor,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: urlController,
-                  decoration: InputDecoration(
-                    hintText: 'https://example.com/foto.jpg',
-                    prefixIcon: const Icon(Icons.link, color: kPrimaryColor),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 46,
-                  child: ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: kPrimaryColor,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    onPressed: () async {
-                      final url = urlController.text.trim();
-                      if (url.isEmpty) {
-                        messenger.showSnackBar(
-                          const SnackBar(content: Text('Silakan masukkan URL gambar terlebih dahulu.')),
-                        );
-                        return;
-                      }
-                      Navigator.pop(ctx);
-                      final ok = await authProvider.updateProfilePhoto(url);
-                      if (ok && mounted) {
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('Foto profil berhasil diperbarui via URL!'),
-                            backgroundColor: Colors.green,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.check, color: Colors.white, size: 18),
-                    label: const Text('Terapkan Foto URL', style: TextStyle(color: Colors.white)),
-                  ),
-                ),
-
-                const SizedBox(height: 10),
-                // Opsi Hapus Foto / Gunakan Inisial
-                SizedBox(
-                  width: double.infinity,
-                  child: TextButton.icon(
-                    style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-                    onPressed: () async {
-                      Navigator.pop(ctx);
-                      await authProvider.updateProfilePhoto('');
-                      if (mounted) {
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text('Foto profil dihapus, kembali ke inisial nama.'),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      }
-                    },
-                    icon: const Icon(Icons.delete_outline, size: 18),
-                    label: const Text('Hapus Foto (Gunakan Inisial Huruf)'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ============================================================
-  // EDIT DATA DIRI (NAMA & NO HP)
-  // ============================================================
-  void _showEditProfileDialog(BuildContext context, UserModel user) {
-    final messenger = ScaffoldMessenger.of(context);
-    final nameCtrl = TextEditingController(text: user.name);
-    final phoneCtrl = TextEditingController(text: user.phone ?? '');
-    final formKey = GlobalKey<FormState>();
-
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            Icon(Icons.edit, color: kPrimaryColor),
-            SizedBox(width: 8),
-            Text('Edit Data Profil', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          ],
-        ),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 8),
+          contentPadding: const EdgeInsets.fromLTRB(22, 8, 22, 12),
+          actionsPadding: const EdgeInsets.fromLTRB(22, 0, 22, 18),
+          title: const Row(
             children: [
-              TextFormField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Nama Lengkap',
-                  prefixIcon: Icon(Icons.person_outline),
-                ),
-                validator: (v) => v == null || v.trim().isEmpty ? 'Nama wajib diisi' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: phoneCtrl,
-                keyboardType: TextInputType.phone,
-                decoration: const InputDecoration(
-                  labelText: 'Nomor HP',
-                  prefixIcon: Icon(Icons.phone_outlined),
+              Icon(Icons.camera_alt_rounded, color: kPrimaryColor, size: 22),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Ambil Foto Menggunakan :',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: kTextColor,
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Batal'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: kPrimaryColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            onPressed: () async {
-              if (!formKey.currentState!.validate()) return;
-              Navigator.pop(ctx);
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
-              final ok = await authProvider.updateProfile(
-                name: nameCtrl.text.trim(),
-                phone: phoneCtrl.text.trim(),
-              );
-              if (ok && mounted) {
-                messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Data profil berhasil diperbarui!'),
-                    backgroundColor: Colors.green,
-                    behavior: SnackBarBehavior.floating,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 6),
+              // Pilihan 1: Kamera
+              InkWell(
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickAndUploadImage(ImageSource.camera);
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                );
-              }
-            },
-            child: const Text('Simpan', style: TextStyle(color: Colors.white)),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: kPrimaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.camera_alt_outlined, color: kPrimaryColor, size: 22),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Text(
+                          'Kamera',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: kTextColor,
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Pilihan 2: Foto (Galeri)
+              InkWell(
+                onTap: () {
+                  Navigator.of(ctx).pop();
+                  _pickAndUploadImage(ImageSource.gallery);
+                },
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: kPrimaryColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.photo_library_outlined, color: kPrimaryColor, size: 22),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Text(
+                          'Foto',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: kTextColor,
+                          ),
+                        ),
+                      ),
+                      const Icon(Icons.chevron_right_rounded, color: Color(0xFF94A3B8)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: kSecondaryColor,
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text(
+                  'Batal',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -419,7 +316,6 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
 
       final gUser = await googleSignIn.signIn();
       if (gUser == null) {
-        // Pengguna membatalkan dialog pemilihan akun Google
         return;
       }
 
@@ -434,8 +330,9 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
         messenger.showSnackBar(
           SnackBar(
             content: Text('Akun Google (${gUser.email}) berhasil ditautkan ke akun Anda!'),
-            backgroundColor: Colors.green,
+            backgroundColor: const Color(0xFF047857),
             behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       } else {
@@ -474,14 +371,15 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
             SvgPicture.asset('assets/icons/google-icon.svg', width: 22, height: 22),
             const SizedBox(width: 10),
             Text(
               user.isSales ? 'Tautkan Akun Google Sales' : 'Tautkan Akun Google',
-              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: kTextColor),
             ),
           ],
         ),
@@ -491,7 +389,7 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
           children: [
             Text(
               user.isSales
-                  ? 'Sebagai Sales Lapangan, tautkan akun Google (Gmail) agar Anda dapat masuk ke aplikasi secara instan dengan satu kali klik tanpa perlu memasukkan kata sandi setiap saat.'
+                  ? 'Sebagai Sales Lapangan, tautkan akun Gmail agar dapat masuk dengan satu ketukan tanpa mengetik password setiap waktu.'
                   : 'Masukkan email Google (Gmail) yang ingin Anda tautkan dengan akun CV Maju Bersama:',
               style: const TextStyle(fontSize: 13, color: kTextColor, height: 1.4),
             ),
@@ -513,7 +411,7 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                side: BorderSide(color: Colors.grey.shade300),
+                side: const BorderSide(color: Color(0xFFCBD5E1)),
               ),
               onPressed: () async {
                 try {
@@ -546,7 +444,7 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Row(
                   children: [
-                    const Icon(Icons.touch_app, size: 14, color: kPrimaryColor),
+                    const Icon(Icons.touch_app_outlined, size: 14, color: kPrimaryColor),
                     const SizedBox(width: 6),
                     Text(
                       'Gunakan email saat ini (${user.email})',
@@ -566,10 +464,13 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: kPrimaryColor,
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
             ),
             icon: const Icon(Icons.link, size: 18, color: Colors.white),
-            label: const Text('Tautkan Akun', style: TextStyle(color: Colors.white)),
+            label: const Text('Tautkan Akun', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             onPressed: () async {
               final email = emailController.text.trim();
               if (email.isEmpty) {
@@ -589,8 +490,9 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                 messenger.showSnackBar(
                   SnackBar(
                     content: Text('Akun Google ($email) berhasil ditautkan ke akun Anda!'),
-                    backgroundColor: Colors.green,
+                    backgroundColor: const Color(0xFF047857),
                     behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 );
               } else {
@@ -609,10 +511,6 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
     );
   }
 
-  void _handleLinkGoogle(BuildContext context) {
-    _performNativeGoogleLink(context);
-  }
-
   void _handleUnlinkGoogle(BuildContext context) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final messenger = ScaffoldMessenger.of(context);
@@ -620,17 +518,18 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
           children: [
-            Icon(Icons.link_off, color: Colors.redAccent),
+            Icon(Icons.link_off_rounded, color: Colors.redAccent, size: 24),
             SizedBox(width: 8),
-            Text('Putuskan Tautan Google', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+            Text('Putuskan Tautan Google', style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: kTextColor)),
           ],
         ),
         content: const Text(
           'Apakah Anda yakin ingin memutuskan tautan akun Google? Anda tetap dapat masuk menggunakan email dan password biasa.',
-          style: TextStyle(fontSize: 13),
+          style: TextStyle(fontSize: 13, color: kTextColor, height: 1.4),
         ),
         actions: [
           TextButton(
@@ -640,7 +539,10 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
             ),
             onPressed: () async {
               Navigator.pop(dialogCtx);
@@ -648,10 +550,11 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
               if (!mounted) return;
               if (ok) {
                 messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('Tautan Akun Google telah diputuskan.'),
+                  SnackBar(
+                    content: const Text('Tautan Akun Google telah diputuskan.'),
                     backgroundColor: Colors.orange,
                     behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   ),
                 );
               } else {
@@ -664,7 +567,7 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                 );
               }
             },
-            child: const Text('Putuskan', style: TextStyle(color: Colors.white)),
+            child: const Text('Putuskan', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -678,17 +581,18 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
           children: [
-            Icon(Icons.logout, color: Colors.redAccent),
+            Icon(Icons.logout_rounded, color: Colors.redAccent, size: 22),
             SizedBox(width: 8),
-            Text('Konfirmasi Keluar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Konfirmasi Keluar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: kTextColor)),
           ],
         ),
         content: const Text(
           'Apakah Anda yakin ingin keluar dari sesi akun ini?',
-          style: TextStyle(fontSize: 14),
+          style: TextStyle(fontSize: 14, color: kTextColor),
         ),
         actions: [
           TextButton(
@@ -698,7 +602,10 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
+              minimumSize: Size.zero,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
             ),
             onPressed: () async {
               Navigator.of(ctx).pop();
@@ -708,7 +615,7 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                 Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
               }
             },
-            child: const Text('Keluar', style: TextStyle(color: Colors.white)),
+            child: const Text('Keluar', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -720,7 +627,6 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
     final authProvider = context.watch<AuthProvider>();
     final user = authProvider.currentUser;
 
-    // Data Fallback jika user null
     final displayName = (user != null && user.name.isNotEmpty)
         ? user.name
         : 'Pengguna CV Maju Bersama';
@@ -731,305 +637,218 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
     final isOwnerRole = user?.isSuperAdmin ?? false;
     final isAdminRole = user?.isAdmin ?? false;
 
-    // Styling Khusus Setiap Role
+    // Styling & Aksen Dinamis Berdasarkan Role Resmi Akun
     Color roleColor;
     Color roleBgColor;
     IconData roleIcon;
     String roleLabel;
-    String roleDescription;
-    List<String> roleResponsibilities;
 
     if (isOwnerRole) {
-      roleColor = const Color(0xFF6A1B9A);
-      roleBgColor = const Color(0xFFF3E5F5);
-      roleIcon = Icons.military_tech;
-      roleLabel = 'Superadmin (Owner)';
-      roleDescription = 'Pemilik Perusahaan CV Maju Bersama dengan otoritas penuh atas seluruh operasional bisnis.';
-      roleResponsibilities = [
-        'Akses monitoring laporan omset & pendapatan sales',
-        'Monitoring live tracking posisi seluruh sales di lapangan',
-        'Persetujuan kebijakan dan pengesahan pengajuan barang',
-        'Pengawasan kinerja Administrator dan Staf Lapangan',
-      ];
+      roleColor = const Color(0xFF6B21A8); // Deep Royal Purple
+      roleBgColor = const Color(0xFFF3E8FF);
+      roleIcon = Icons.military_tech_rounded;
+      roleLabel = 'Owner / Superadmin';
     } else if (isAdminRole) {
-      roleColor = const Color(0xFF1565C0);
-      roleBgColor = const Color(0xFFE3F2FD);
-      roleIcon = Icons.admin_panel_settings;
-      roleLabel = 'Administrator (Sekretaris)';
-      roleDescription = 'Pengelola administrasi sistem, penjadwalan rute, verifikasi izin, dan master data barang.';
-      roleResponsibilities = [
-        'Manajemen Master Data Barang dan Master Harga resmi',
-        'Penyusunan jadwal rute kunjungan sales lapangan',
-        'Verifikasi absensi, formulir izin sakit/cuti',
-        'Pengelolaan data anggota dan hak akses pengguna',
-      ];
+      roleColor = const Color(0xFF1D4ED8); // Classic Sapphire Blue
+      roleBgColor = const Color(0xFFEFF6FF);
+      roleIcon = Icons.admin_panel_settings_rounded;
+      roleLabel = 'Administrator';
     } else {
-      // Sales
-      roleColor = const Color(0xFF00796B);
-      roleBgColor = const Color(0xFFE0F2F1);
-      roleIcon = Icons.badge;
+      // Sales Lapangan
+      roleColor = const Color(0xFF047857); // Deep Emerald Teal
+      roleBgColor = const Color(0xFFECFDF5);
+      roleIcon = Icons.badge_rounded;
       roleLabel = 'Sales Lapangan';
-      roleDescription = 'Ujung tombak pemasaran produk di lapangan, menangani kunjungan outlet toko dan penjualan.';
-      roleResponsibilities = [
-        'Kunjungan rute toko sesuai jadwal harian dan mingguan',
-        'Presensi / absensi lokasi GPS dan foto saat di toko mitra',
-        'Input pengajuan barang baru dan pesanan pelanggan',
-        'Pencapaian target penjualan dan monitoring komisi',
-      ];
     }
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F6F9),
+      backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text(
-          'Profil Pengguna',
-          style: TextStyle(color: kTextColor, fontWeight: FontWeight.bold),
+          'Profil Akun',
+          style: TextStyle(
+            color: Color(0xFF0F172A),
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
         ),
         backgroundColor: Colors.white,
         elevation: 0,
         centerTitle: false,
-        iconTheme: const IconThemeData(color: kTextColor),
-        actions: [
-          IconButton(
-            tooltip: 'Edit Data Profil',
-            icon: const Icon(Icons.edit_outlined, color: kPrimaryColor),
-            onPressed: user != null ? () => _showEditProfileDialog(context, user) : null,
-          ),
-          IconButton(
-            tooltip: 'Logout',
-            icon: const Icon(Icons.logout, color: Colors.redAccent),
-            onPressed: () => _confirmLogout(context),
-          ),
-        ],
+        iconTheme: const IconThemeData(color: Color(0xFF0F172A)),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ============================================================
-            // BAR GANTI ROLE AKUN (DEMO & EVALUASI SETIAP ROLE)
-            // ============================================================
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.08),
-                    blurRadius: 8,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: const [
-                      Icon(Icons.switch_account, size: 18, color: kPrimaryColor),
-                      SizedBox(width: 8),
-                      Text(
-                        'Pilih Role Pengguna (Tampilkan Setiap Role):',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: kTextColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 6,
-                    children: [
-                      // Role Owner
-                      ChoiceChip(
-                        avatar: Icon(
-                          Icons.military_tech,
-                          size: 16,
-                          color: isOwnerRole ? Colors.white : const Color(0xFF6A1B9A),
-                        ),
-                        label: const Text('Owner'),
-                        selected: isOwnerRole,
-                        selectedColor: const Color(0xFF6A1B9A),
-                        labelStyle: TextStyle(
-                          color: isOwnerRole ? Colors.white : kTextColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                        onSelected: (_) => authProvider.switchRoleDemo('owner'),
-                      ),
-                      // Role Admin
-                      ChoiceChip(
-                        avatar: Icon(
-                          Icons.admin_panel_settings,
-                          size: 16,
-                          color: isAdminRole ? Colors.white : const Color(0xFF1565C0),
-                        ),
-                        label: const Text('Admin'),
-                        selected: isAdminRole,
-                        selectedColor: const Color(0xFF1565C0),
-                        labelStyle: TextStyle(
-                          color: isAdminRole ? Colors.white : kTextColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                        onSelected: (_) => authProvider.switchRoleDemo('admin'),
-                      ),
-                      // Role Sales
-                      ChoiceChip(
-                        avatar: Icon(
-                          Icons.badge,
-                          size: 16,
-                          color: isSalesRole ? Colors.white : const Color(0xFF00796B),
-                        ),
-                        label: const Text('Sales'),
-                        selected: isSalesRole,
-                        selectedColor: const Color(0xFF00796B),
-                        labelStyle: TextStyle(
-                          color: isSalesRole ? Colors.white : kTextColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                        onSelected: (_) => authProvider.switchRoleDemo('sales'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // ============================================================
-            // KARTU UTAMA PROFIL & FOTO PROFIL (UNTUK SETIAP ROLE)
+            // HERO IDENTITY CARD (BESPOKE EXECUTIVE PROFILE HEADER)
             // ============================================================
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.grey.withOpacity(0.08),
-                    blurRadius: 10,
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                    blurRadius: 16,
                     offset: const Offset(0, 4),
                   ),
                 ],
               ),
               child: Column(
                 children: [
-                  // Avatar dengan Tombol Kamera Ubah Foto
-                  Stack(
-                    alignment: Alignment.bottomRight,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: roleColor.withOpacity(0.4), width: 3),
-                        ),
-                        child: CircleAvatar(
-                          radius: 50,
-                          backgroundColor: kPrimaryLightColor,
-                          backgroundImage: photoUrl != null && photoUrl.isNotEmpty
-                              ? (photoUrl.startsWith('assets/')
-                                  ? AssetImage(photoUrl) as ImageProvider
-                                  : NetworkImage(photoUrl))
-                              : null,
-                          child: (photoUrl == null || photoUrl.isEmpty)
-                              ? Text(
-                                  displayName.isNotEmpty ? displayName[0].toUpperCase() : 'U',
-                                  style: TextStyle(
-                                    fontSize: 38,
-                                    fontWeight: FontWeight.bold,
-                                    color: roleColor,
-                                  ),
-                                )
-                              : null,
-                        ),
+                  // Banner Header dengan Nuansa Deep Navy Corporate
+                  Container(
+                    width: double.infinity,
+                    height: 84,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          roleColor,
+                          roleColor.withValues(alpha: 0.82),
+                        ],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                      // Badge Kamera Interaktif
-                      GestureDetector(
-                        onTap: () => _showChangePhotoModal(context),
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(19)),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    alignment: Alignment.topRight,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white.withValues(alpha: 0.25)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 6,
+                            height: 6,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFF22C55E),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Sesi Aktif',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  // Avatar & Identitas
+                  Transform.translate(
+                    offset: const Offset(0, -42),
+                    child: Column(
+                      children: [
+                        // Lingkaran Avatar Interaktif dengan Badge Kamera
+                        Stack(
+                          alignment: Alignment.bottomRight,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _showChangePhotoModal(context),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.08),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: UserAvatar(
+                                  photoUrl: photoUrl,
+                                  name: displayName,
+                                  radius: 46,
+                                  backgroundColor: roleBgColor,
+                                  textColor: roleColor,
+                                  fontSize: 32,
+                                ),
+                              ),
+                            ),
+                            // Tombol Kamera Upload
+                            GestureDetector(
+                              onTap: () => _showChangePhotoModal(context),
+                              child: Container(
+                                padding: const EdgeInsets.all(7),
+                                decoration: BoxDecoration(
+                                  color: kPrimaryColor,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.15),
+                                      blurRadius: 6,
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.camera_alt_rounded,
+                                  color: Colors.white,
+                                  size: 16,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+
+                        // Nama Pengguna
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Text(
+                            displayName,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+
+                        // Badge Role Resmi Akun
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                           decoration: BoxDecoration(
-                            color: kPrimaryColor,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.15),
-                                blurRadius: 6,
+                            color: roleBgColor,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: roleColor.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(roleIcon, size: 14, color: roleColor),
+                              const SizedBox(width: 6),
+                              Text(
+                                roleLabel,
+                                style: TextStyle(
+                                  color: roleColor,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ],
-                          ),
-                          child: const Icon(
-                            Icons.camera_alt,
-                            color: Colors.white,
-                            size: 18,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Tombol "Ubah Foto Profil" untuk setiap role
-                  OutlinedButton.icon(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: kPrimaryColor,
-                      side: const BorderSide(color: kPrimaryColor),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    ),
-                    onPressed: () => _showChangePhotoModal(context),
-                    icon: const Icon(Icons.photo_camera_back_outlined, size: 16),
-                    label: const Text(
-                      'Ubah Foto Profil',
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  // Nama Pengguna
-                  Text(
-                    displayName,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: kTextColor,
-                    ),
-                  ),
-
-                  const SizedBox(height: 6),
-
-                  // Badge Role Dinamis
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: roleBgColor,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: roleColor.withOpacity(0.5)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(roleIcon, size: 16, color: roleColor),
-                        const SizedBox(width: 6),
-                        Text(
-                          roleLabel,
-                          style: TextStyle(
-                            color: roleColor,
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
@@ -1039,362 +858,283 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
               ),
             ),
 
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
 
             // ============================================================
-            // KARTU TANGGUNG JAWAB & AKSES ROLE (ADMIN / OWNER / SALES)
+            // SEKSI 1: INFORMASI DATA PRIBADI
             // ============================================================
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Text(
+                'INFORMASI PRIBADI',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.email_outlined, color: kPrimaryColor, size: 20),
+                    ),
+                    title: const Text('Email Akun', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                    subtitle: Text(
+                      displayEmail,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 56, endIndent: 16, color: Color(0xFFF1F5F9)),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.phone_outlined, color: kPrimaryColor, size: 20),
+                    ),
+                    title: const Text('Nomor Handphone', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                    subtitle: Text(
+                      displayPhone,
+                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                    ),
+                  ),
+                  const Divider(height: 1, indent: 56, endIndent: 16, color: Color(0xFFF1F5F9)),
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFECFDF5),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.verified_user_outlined, color: Color(0xFF047857), size: 20),
+                    ),
+                    title: const Text('Status Keaktifan Akun', style: TextStyle(fontSize: 11, color: Color(0xFF64748B))),
+                    subtitle: const Text(
+                      'Aktif & Terverifikasi',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF047857)),
+                    ),
                   ),
                 ],
               ),
+            ),
+
+            const SizedBox(height: 18),
+
+            // ============================================================
+            // SEKSI 2: INTEGRASI AKUN GOOGLE (GMAIL)
+            // ============================================================
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Text(
+                'KEAMANAN & INTEGRASI',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: Color(0xFF64748B),
+                ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: user?.googleId != null
+                      ? const Color(0xFFBBF7D0)
+                      : const Color(0xFFE2E8F0),
+                ),
+              ),
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: roleBgColor,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(roleIcon, color: roleColor, size: 20),
+                      SvgPicture.asset(
+                        'assets/icons/google-icon.svg',
+                        width: 20,
+                        height: 20,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        child: Text(
+                          isSalesRole ? 'Tautan Akun Google Sales' : 'Akun Google (Gmail)',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: user?.googleId != null ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: user?.googleId != null ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              'Otoritas & Hak Akses $roleLabel',
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                                color: kTextColor,
-                              ),
+                            Icon(
+                              user?.googleId != null ? Icons.check_circle_rounded : Icons.info_outline_rounded,
+                              size: 12,
+                              color: user?.googleId != null ? const Color(0xFF047857) : const Color(0xFFB45309),
                             ),
+                            const SizedBox(width: 4),
                             Text(
-                              roleDescription,
-                              style: const TextStyle(fontSize: 11, color: kSecondaryColor),
+                              user?.googleId != null ? 'Terhubung' : 'Belum Terhubung',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: user?.googleId != null ? const Color(0xFF047857) : const Color(0xFFB45309),
+                              ),
                             ),
                           ],
                         ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    user?.googleId != null
+                        ? 'Akun Google aktif (${user?.displayGoogleEmail}). Anda dapat langsung login cepat 1-klik dengan Google tanpa mengetik password.'
+                        : 'Tautkan akun Google agar dapat langsung masuk ke aplikasi secara instan dan aman saat bertugas di lapangan.',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), height: 1.4),
+                  ),
                   const SizedBox(height: 12),
-                  const Divider(),
-                  const SizedBox(height: 6),
-                  ...roleResponsibilities.map(
-                    (resp) => Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.check_circle, size: 16, color: roleColor),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              resp,
-                              style: const TextStyle(fontSize: 12, color: kTextColor),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // ============================================================
-            // INFORMASI KONTAK & AKUN PRIBADI
-            // ============================================================
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Column(
-                children: [
-                  ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: kPrimaryLightColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.email_outlined, color: kPrimaryColor),
-                    ),
-                    title: const Text('Email Akun', style: TextStyle(fontSize: 12, color: kSecondaryColor)),
-                    subtitle: Text(
-                      displayEmail,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kTextColor),
-                    ),
-                  ),
-                  const Divider(height: 1, indent: 20, endIndent: 20),
-                  ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: kPrimaryLightColor,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.phone_outlined, color: kPrimaryColor),
-                    ),
-                    title: const Text('Nomor Handphone', style: TextStyle(fontSize: 12, color: kSecondaryColor)),
-                    subtitle: Text(
-                      displayPhone,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kTextColor),
-                    ),
-                  ),
-                  const Divider(height: 1, indent: 20, endIndent: 20),
-                  ListTile(
-                    leading: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.verified_user_outlined, color: Colors.green),
-                    ),
-                    title: const Text('Status Keaktifan Akun', style: TextStyle(fontSize: 12, color: kSecondaryColor)),
-                    subtitle: const Text(
-                      'Aktif & Terverifikasi',
-                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.green),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // INTEGRASI AKUN GOOGLE (GMAIL)
-            // ============================================================
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: isSalesRole && user?.googleId == null
-                    ? Border.all(color: Colors.amber.shade400, width: 1.5)
-                    : (isSalesRole && user?.googleId != null
-                        ? Border.all(color: Colors.green.shade300, width: 1.5)
-                        : null),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withValues(alpha: 0.08),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        SvgPicture.asset(
-                          'assets/icons/google-icon.svg',
-                          width: 22,
-                          height: 22,
+                  if (user?.googleId != null) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFFECACA)),
+                          foregroundColor: const Color(0xFFDC2626),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            isSalesRole ? 'Tautan Akun Google Sales' : 'Akun Google (Gmail)',
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: kTextColor,
-                            ),
-                          ),
+                        onPressed: () => _handleUnlinkGoogle(context),
+                        icon: const Icon(Icons.link_off_rounded, size: 16),
+                        label: const Text(
+                          'Putuskan Tautan Akun Google',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: user?.googleId != null ? Colors.green.shade50 : Colors.amber.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: user?.googleId != null ? Colors.green.shade200 : Colors.amber.shade300,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                user?.googleId != null ? Icons.check_circle : Icons.warning_amber_rounded,
-                                size: 12,
-                                color: user?.googleId != null ? Colors.green.shade700 : Colors.amber.shade800,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                user?.googleId != null ? 'Terhubung' : 'Belum Terhubung',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: user?.googleId != null ? Colors.green.shade700 : Colors.amber.shade800,
-                                ),
-                              ),
-                            ],
-                          ),
+                      ),
+                    ),
+                  ] else ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        style: OutlinedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      user?.googleId != null
-                          ? 'Akun Google aktif ditautkan (${user?.displayGoogleEmail}). Sebagai Sales Lapangan, Anda dapat langsung masuk dengan 1-klik melalui tombol "Masuk dengan Google" tanpa perlu mengetik kata sandi di lapangan.'
-                          : 'Akun Sales Anda belum ditautkan ke Google. Tautkan akun Gmail Anda agar dapat langsung login secara instan dan aman di lapangan tanpa perlu memasukkan kata sandi setiap saat.',
-                      style: const TextStyle(fontSize: 12, color: kSecondaryColor, height: 1.4),
-                    ),
-                    const SizedBox(height: 14),
-                    if (user?.googleId != null) ...[
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: Colors.red.shade300),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                          onPressed: () => _handleUnlinkGoogle(context),
-                          icon: const Icon(Icons.link_off, size: 18, color: Colors.redAccent),
-                          label: const Text(
-                            'Putuskan Tautan Akun Google',
-                            style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold),
+                        onPressed: () => _performNativeGoogleLink(context),
+                        icon: SvgPicture.asset('assets/icons/google-icon.svg', width: 18, height: 18),
+                        label: const Text(
+                          'Tautkan dengan Akun Google',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A),
                           ),
                         ),
                       ),
-                    ] else ...[
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            backgroundColor: Colors.white,
-                            side: BorderSide(color: Colors.grey.shade300, width: 1.5),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                          ),
-                          onPressed: () => _performNativeGoogleLink(context),
-                          icon: SvgPicture.asset('assets/icons/google-icon.svg', width: 20, height: 20),
-                          label: const Text(
-                            'Tautkan dengan Akun Google',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: kTextColor,
-                            ),
-                          ),
+                    ),
+                    const SizedBox(height: 6),
+                    Center(
+                      child: TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => _showManualLinkDialog(context),
+                        child: const Text(
+                          'Atau tautkan manual dengan memasukkan email',
+                          style: TextStyle(fontSize: 11, color: Color(0xFF64748B), decoration: TextDecoration.underline),
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: TextButton.icon(
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          ),
-                          onPressed: () => _showManualLinkDialog(context),
-                          icon: const Icon(Icons.edit_outlined, size: 14, color: kSecondaryColor),
-                          label: const Text(
-                            'Atau tautkan manual dengan memasukkan email',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: kSecondaryColor,
-                              decoration: TextDecoration.underline,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
-            const SizedBox(height: 14),
 
             // ============================================================
-            // KHUSUS ROLE SALES: FORM TEXT INPUT UBAH PASSWORD
+            // SEKSI 4: FORM UBAH PASSWORD (KHUSUS ROLE SALES)
             // ============================================================
             if (isSalesRole) ...[
+              const SizedBox(height: 18),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Text(
+                  'KREDENSIAL AKUN SALES',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFF00796B).withOpacity(0.3), width: 1.5),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF00796B).withOpacity(0.08),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: Form(
                   key: _passwordFormKey,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      const Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFE0F2F1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(Icons.lock_reset, color: Color(0xFF00796B), size: 24),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
-                                Text(
-                                  'Ubah Password Akun Sales',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: kTextColor,
-                                  ),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  'Fitur khusus role Sales untuk mengamankan kredensial akun lapangan.',
-                                  style: TextStyle(fontSize: 11, color: kSecondaryColor),
-                                ),
-                              ],
+                          Icon(Icons.lock_reset_rounded, color: kPrimaryColor, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Ubah Password Sales',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF0F172A),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Pastikan password menggunakan minimal 6 karakter kombinasi yang aman.',
+                        style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                      ),
+                      const SizedBox(height: 14),
 
                       // Input Password Baru
                       TextFormField(
@@ -1402,12 +1142,13 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                         obscureText: _obscureNewPassword,
                         decoration: InputDecoration(
                           labelText: 'Password Baru',
-                          hintText: 'Masukkan password baru',
-                          prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF00796B)),
+                          hintText: 'Minimal 6 karakter',
+                          prefixIcon: const Icon(Icons.lock_outline_rounded, color: kPrimaryColor, size: 20),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscureNewPassword ? Icons.visibility_off : Icons.visibility,
-                              color: kSecondaryColor,
+                              _obscureNewPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                              color: const Color(0xFF94A3B8),
+                              size: 20,
                             ),
                             onPressed: () {
                               setState(() {
@@ -1415,10 +1156,8 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                               });
                             },
                           ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
@@ -1440,11 +1179,12 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                         decoration: InputDecoration(
                           labelText: 'Konfirmasi Password Baru',
                           hintText: 'Ulangi password baru Anda',
-                          prefixIcon: const Icon(Icons.lock_clock_outlined, color: Color(0xFF00796B)),
+                          prefixIcon: const Icon(Icons.lock_clock_outlined, color: kPrimaryColor, size: 20),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              _obscureConfirmPassword ? Icons.visibility_off : Icons.visibility,
-                              color: kSecondaryColor,
+                              _obscureConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                              color: const Color(0xFF94A3B8),
+                              size: 20,
                             ),
                             onPressed: () {
                               setState(() {
@@ -1452,10 +1192,8 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                               });
                             },
                           ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         ),
                         validator: (value) {
                           if (value == null || value.isEmpty) {
@@ -1468,36 +1206,34 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                         },
                       ),
 
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
 
                       // Tombol Simpan Password Baru
                       SizedBox(
                         width: double.infinity,
-                        height: 48,
+                        height: 44,
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF00796B),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            elevation: 2,
+                            backgroundColor: kPrimaryColor,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            elevation: 0,
                           ),
                           onPressed: _isSavingPassword ? null : _handleUpdatePassword,
                           icon: _isSavingPassword
                               ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
+                                  width: 16,
+                                  height: 16,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
                                     color: Colors.white,
                                   ),
                                 )
-                              : const Icon(Icons.save_outlined, color: Colors.white),
+                              : const Icon(Icons.check_rounded, color: Colors.white, size: 18),
                           label: Text(
                             _isSavingPassword ? 'Menyimpan...' : 'Perbarui Password Sales',
                             style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
                               color: Colors.white,
                             ),
                           ),
@@ -1507,30 +1243,32 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
                   ),
                 ),
               ),
-              const SizedBox(height: 14),
             ],
+
+            const SizedBox(height: 24),
 
             // ============================================================
             // TOMBOL KELUAR / LOGOUT
             // ============================================================
             SizedBox(
               width: double.infinity,
-              height: 50,
+              height: 46,
               child: OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.redAccent,
-                  side: const BorderSide(color: Colors.redAccent),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  foregroundColor: const Color(0xFFDC2626),
+                  side: const BorderSide(color: Color(0xFFFCA5A5)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  backgroundColor: const Color(0xFFFEF2F2),
                 ),
                 onPressed: () => _confirmLogout(context),
-                icon: const Icon(Icons.logout),
+                icon: const Icon(Icons.logout_rounded, size: 18),
                 label: const Text(
                   'Keluar dari Aplikasi',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
                 ),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 24),
           ],
         ),
       ),

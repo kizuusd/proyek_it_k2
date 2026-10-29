@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../constants.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/user_avatar.dart';
 import 'fr12_register_screen.dart';
 
 class FR07KeanggotaanScreen extends StatefulWidget {
@@ -168,17 +169,12 @@ class _FR07KeanggotaanScreenState extends State<FR07KeanggotaanScreen> {
         padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            CircleAvatar(
+            UserAvatar(
+              photoUrl: user.photoUrl,
+              name: user.name,
               radius: 26,
               backgroundColor: badgeColor.withValues(alpha: 0.15),
-              child: Text(
-                user.name.isNotEmpty ? user.name[0].toUpperCase() : 'U',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: badgeColor,
-                ),
-              ),
+              textColor: badgeColor,
             ),
             const SizedBox(width: 14),
             Expanded(

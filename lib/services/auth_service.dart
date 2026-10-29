@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
@@ -17,17 +18,162 @@ class AuthService {
     scopes: ['email', 'profile'],
   );
   static const String _mockUsersStorageKey = 'auth_mock_users';
+  static const String _lastResolvedUrlKey = 'auth_last_resolved_base_url';
   Future<void>? _mockUsersLoad;
 
   // Base URL konfigurasi REST API backend (Node.js Express + MySQL)
   static const String baseUrl = 'http://127.0.0.1:8000/api';
   static const String androidBaseUrl = 'http://10.0.2.2:8000/api';
-  
-  static String get activeBaseUrl {
+  static const String lanBaseUrl = 'http://192.168.2.11:8000/api';
+
+  static String? _resolvedBaseUrl;
+  static Future<String>? _resolvingFuture;
+
+  static List<String> get candidateBaseUrls {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return androidBaseUrl;
+      return const [
+        lanBaseUrl,     // Perangkat fisik via Wi-Fi LAN lokal
+        baseUrl,        // Perangkat fisik via USB (adb reverse tcp:8000 tcp:8000)
+        androidBaseUrl, // Android Emulator (10.0.2.2)
+        'http://192.168.10.1:8000/api',
+        'http://192.168.177.1:8000/api',
+        'http://192.168.56.1:8000/api',
+      ];
+    }
+    return const [
+      baseUrl,
+      'http://localhost:8000/api',
+      lanBaseUrl,
+    ];
+  }
+
+  static String get activeBaseUrl {
+    if (_resolvedBaseUrl != null) {
+      return _resolvedBaseUrl!;
+    }
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return lanBaseUrl;
     }
     return baseUrl;
+  }
+
+  static Future<String> resolveBaseUrl({bool forceRefresh = false}) async {
+    try {
+      final bindingName = WidgetsBinding.instance.runtimeType.toString();
+      if (bindingName.contains('Test')) {
+        return activeBaseUrl;
+      }
+    } catch (_) {}
+
+    if (!forceRefresh && _resolvedBaseUrl != null) {
+      return _resolvedBaseUrl!;
+    }
+    if (!forceRefresh && _resolvingFuture != null) {
+      return _resolvingFuture!;
+    }
+
+    final future = _probeBaseUrls();
+    _resolvingFuture = future;
+    try {
+      final resolved = await future;
+      _resolvedBaseUrl = resolved;
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_lastResolvedUrlKey, resolved);
+      } catch (_) {}
+      return resolved;
+    } finally {
+      _resolvingFuture = null;
+    }
+  }
+
+  /// Probe semua kandidat URL secara paralel dan ambil URL PERTAMA yang merespons HTTP 200 OK.
+  /// Mengabaikan kandidat yang gagal cepat (misal Connection refused pada 127.0.0.1 / 10.0.2.2).
+  static Future<String> _probeBaseUrls() async {
+    final candidates = <String>[];
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedUrl = prefs.getString(_lastResolvedUrlKey);
+      if (savedUrl != null && savedUrl.isNotEmpty) {
+        candidates.add(savedUrl);
+      }
+    } catch (_) {}
+    for (final c in candidateBaseUrls) {
+      if (!candidates.contains(c)) {
+        candidates.add(c);
+      }
+    }
+
+    final completer = Completer<String>();
+    int remaining = candidates.length;
+
+    for (final url in candidates) {
+      http
+          .get(
+            Uri.parse('$url/health'),
+            headers: {'Accept': 'application/json'},
+          )
+          .timeout(const Duration(milliseconds: 2500))
+          .then((response) {
+        if (response.statusCode == 200 && !completer.isCompleted) {
+          completer.complete(url);
+        } else {
+          remaining--;
+          if (remaining <= 0 && !completer.isCompleted) {
+            completer.complete(
+              !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+                  ? lanBaseUrl
+                  : baseUrl,
+            );
+          }
+        }
+      }).catchError((_) {
+        remaining--;
+        if (remaining <= 0 && !completer.isCompleted) {
+          completer.complete(
+            !kIsWeb && defaultTargetPlatform == TargetPlatform.android
+                ? lanBaseUrl
+                : baseUrl,
+          );
+        }
+      });
+    }
+
+    return completer.future;
+  }
+
+  /// Menjalankan HTTP request dengan auto-failover ke seluruh kandidat URL lokal
+  /// apabila URL aktif mengalami Connection refused / Timeout.
+  static Future<http.Response> requestWithFailover(
+    Future<http.Response> Function(String baseUrl) requestFn,
+  ) async {
+    await resolveBaseUrl();
+    final tried = <String>{};
+    final firstUrl = activeBaseUrl;
+    tried.add(firstUrl);
+
+    try {
+      return await requestFn(firstUrl);
+    } catch (_) {
+      // Coba kandidat URL lain secara berurutan jika URL pertama gagal (misal USB dicabut / IP berubah)
+      Object? lastError;
+      for (final candidate in candidateBaseUrls) {
+        if (tried.contains(candidate)) continue;
+        tried.add(candidate);
+        try {
+          final response = await requestFn(candidate);
+          _resolvedBaseUrl = candidate;
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString(_lastResolvedUrlKey, candidate);
+          } catch (_) {}
+          return response;
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      throw lastError ?? Exception('Tidak dapat terhubung ke server backend.');
+    }
   }
 
   // Flag apakah menggunakan mock in-memory untuk pengujian cepat
@@ -103,6 +249,19 @@ class AuthService {
       'google_id': null,
       'last_login_at': null,
     },
+    {
+      'id': 6,
+      'name': 'njjjj',
+      'email': 'setyoagung450@gmail.com',
+      'password': 'password123',
+      'phone': '99799779',
+      'photo_url': 'https://lh3.googleusercontent.com/a/ACg8ocJkXxa2Ol2zJ_zZcsnBWlXuY9PbEQ52_MCCinARYvV4Gm3Gq00',
+      'role': 'sales',
+      'is_active': 1,
+      'google_id': '101600273800804324536',
+      'google_email': 'setyoagung450@gmail.com',
+      'last_login_at': null,
+    },
   ];
 
   Future<void> _ensureMockUsersLoaded() {
@@ -164,13 +323,16 @@ class AuthService {
     if (!shouldUseMock) {
       http.Response? response;
       try {
-        response = await http.post(
-          Uri.parse('$activeBaseUrl/auth/login'),
-          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-          body: jsonEncode({'email': cleanEmail, 'password': password}),
-        ).timeout(const Duration(seconds: 8));
+        response = await requestWithFailover(
+          (base) => http
+              .post(
+                Uri.parse('$base/auth/login'),
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: jsonEncode({'email': cleanEmail, 'password': password}),
+              )
+              .timeout(const Duration(seconds: 6)),
+        );
       } catch (_) {
-        // Fallback khusus saat server offline / dev headless test
         return _loginWithMockEmail(cleanEmail, password);
       }
 
@@ -268,21 +430,31 @@ class AuthService {
       idToken = googleAuth.idToken;
     }
 
-    // 1. Hubungkan ke backend Node.js (MySQL db_proyek_it_k2)
+    // 1. Hubungkan ke backend Node.js (MySQL db_tracking_sales) dengan auto-failover
     if (!shouldUseMock) {
       http.Response? response;
       try {
-        response = await http.post(
-          Uri.parse('$activeBaseUrl/auth/google-login'),
-          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-          body: jsonEncode({
-            'email': email,
-            'google_id': googleId,
-            'photo_url': photoUrl,
-          }),
-        ).timeout(const Duration(seconds: 8));
-      } catch (e) {
-        throw Exception('Koneksi ke backend server gagal. Pastikan server Node.js aktif: $e');
+        response = await requestWithFailover(
+          (base) => http
+              .post(
+                Uri.parse('$base/auth/google-login'),
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: jsonEncode({
+                  'email': email,
+                  'google_id': googleId,
+                  'photo_url': photoUrl,
+                }),
+              )
+              .timeout(const Duration(seconds: 6)),
+        );
+      } catch (_) {
+        // Fallback ke autentikasi lokal/cache jika seluruh kandidat URL tidak terjangkau
+        return await _loginWithMockGoogle(
+          mockEmail: email,
+          googleId: googleId,
+          photoUrl: photoUrl,
+          idToken: idToken,
+        );
       }
 
       if (response.statusCode == 200) {
@@ -293,7 +465,7 @@ class AuthService {
           throw Exception('Akun Anda dinonaktifkan. Hubungi Administrator.');
         }
 
-        // Sinkronkan ke memory/session lokal
+        // Sinkronkan ke memory/session lokal agar tetap bisa login bila sewaktu-waktu offline
         await _ensureMockUsersLoaded();
         final foundIdx = _mockUsers.indexWhere(
           (u) => u['id'] == authResponse.user.id ||
@@ -304,8 +476,15 @@ class AuthService {
           _mockUsers[foundIdx]['google_email'] = authResponse.user.googleEmail;
           _mockUsers[foundIdx]['photo_url'] = authResponse.user.photoUrl;
           _mockUsers[foundIdx]['last_login_at'] = DateTime.now().toIso8601String();
-          await _saveMockUsers();
+          _mockUsers[foundIdx]['_persist_locally'] = true;
+        } else {
+          _mockUsers.add({
+            ...authResponse.user.toJson(),
+            'password': 'password123',
+            '_persist_locally': true,
+          });
         }
+        await _saveMockUsers();
 
         await _sessionService.saveSession(authResponse);
         return authResponse;
@@ -315,7 +494,7 @@ class AuthService {
       }
     }
 
-    // 2. Fallback Simulasi / Offline Mode (HANYA saat useMock == true)
+    // 2. Fallback Simulasi / Offline Mode
     return await _loginWithMockGoogle(
       mockEmail: email,
       googleId: googleId,
@@ -360,6 +539,23 @@ class AuthService {
       );
     }
 
+    // Prioritas 4: Cek sesi terakhir yang tersimpan di perangkat
+    if (foundIndex == -1) {
+      final cachedUser = await _sessionService.getUser();
+      if (cachedUser != null &&
+          ((targetEmail.isNotEmpty &&
+                  (cachedUser.email.toLowerCase() == targetEmail ||
+                      cachedUser.googleEmail?.toLowerCase() == targetEmail)) ||
+              (googleId != null && cachedUser.googleId == googleId))) {
+        _mockUsers.add({
+          ...cachedUser.toJson(),
+          'password': 'password123',
+          '_persist_locally': true,
+        });
+        foundIndex = _mockUsers.length - 1;
+      }
+    }
+
     // Jika akun tidak ditemukan atau belum pernah ditautkan
     if (foundIndex == -1) {
       throw Exception(
@@ -380,6 +576,7 @@ class AuthService {
       userData['photo_url'] = photoUrl;
     }
     userData['last_login_at'] = DateTime.now().toIso8601String();
+    userData['_persist_locally'] = true;
     await _saveMockUsers();
 
     final user = UserModel.fromJson(userData);
@@ -414,49 +611,55 @@ class AuthService {
     }
 
     if (!shouldUseMock) {
-      http.Response response;
+      http.Response? response;
       try {
-        response = await http.post(
-          Uri.parse('$activeBaseUrl/auth/register-sales'),
-          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-          body: jsonEncode({
-            'manager_id': managerUser.id,
-            'name': newSalesUser.name.trim(),
-            'email': cleanEmail,
-            'password': password,
-            'phone': newSalesUser.phone?.trim(),
-            'link_google': linkGoogle,
-          }),
-        ).timeout(const Duration(seconds: 8));
-      } catch (e) {
-        throw Exception('Koneksi ke backend server gagal: $e');
+        response = await requestWithFailover(
+          (base) => http
+              .post(
+                Uri.parse('$base/auth/register-sales'),
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: jsonEncode({
+                  'manager_id': managerUser.id,
+                  'name': newSalesUser.name.trim(),
+                  'email': cleanEmail,
+                  'password': password,
+                  'phone': newSalesUser.phone?.trim(),
+                  'link_google': linkGoogle,
+                }),
+              )
+              .timeout(const Duration(seconds: 6)),
+        );
+      } catch (_) {
+        response = null;
       }
 
-      if (response.statusCode == 201 || response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final createdUser = UserModel.fromJson(data['user']);
-        
-        // Cache juga ke memori lokal
-        await _ensureMockUsersLoaded();
-        _mockUsers.add({
-          'id': createdUser.id,
-          'name': createdUser.name,
-          'email': createdUser.email,
-          'password': password,
-          'phone': createdUser.phone,
-          'role': 'sales',
-          'is_active': 1,
-          'google_id': createdUser.googleId,
-          'google_email': createdUser.googleEmail,
-          'created_by': managerUser.name,
-          '_persist_locally': true,
-        });
-        await _saveMockUsers();
+      if (response != null) {
+        if (response.statusCode == 201 || response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final createdUser = UserModel.fromJson(data['user']);
+          
+          // Cache juga ke memori lokal
+          await _ensureMockUsersLoaded();
+          _mockUsers.add({
+            'id': createdUser.id,
+            'name': createdUser.name,
+            'email': createdUser.email,
+            'password': password,
+            'phone': createdUser.phone,
+            'role': 'sales',
+            'is_active': 1,
+            'google_id': createdUser.googleId,
+            'google_email': createdUser.googleEmail,
+            'created_by': managerUser.name,
+            '_persist_locally': true,
+          });
+          await _saveMockUsers();
 
-        return createdUser;
-      } else {
-        final errBody = jsonDecode(response.body);
-        throw Exception(errBody['message'] ?? 'Gagal mendaftarkan akun Sales.');
+          return createdUser;
+        } else {
+          final errBody = jsonDecode(response.body);
+          throw Exception(errBody['message'] ?? 'Gagal mendaftarkan akun Sales.');
+        }
       }
     }
 
@@ -506,6 +709,53 @@ class AuthService {
 
   // Dapatkan seluruh data anggota untuk panel keanggotaan
   Future<List<UserModel>> getAllUsers() async {
+    if (!shouldUseMock) {
+      try {
+        final response = await requestWithFailover(
+          (base) => http
+              .get(
+                Uri.parse('$base/users'),
+                headers: {'Accept': 'application/json'},
+              )
+              .timeout(const Duration(seconds: 5)),
+        );
+
+        if (response.statusCode == 200) {
+          final body = jsonDecode(response.body);
+          final list = body['data'] as List<dynamic>? ?? [];
+          final users = list
+              .map((item) => UserModel.fromJson(item as Map<String, dynamic>))
+              .toList();
+
+          await _ensureMockUsersLoaded();
+          for (final u in users) {
+            final idx = _mockUsers.indexWhere(
+              (m) =>
+                  m['id'] == u.id ||
+                  (m['email'] as String).toLowerCase() == u.email.toLowerCase(),
+            );
+            if (idx != -1) {
+              _mockUsers[idx] = {
+                ..._mockUsers[idx],
+                ...u.toJson(),
+                '_persist_locally': true,
+              };
+            } else {
+              _mockUsers.add({
+                ...u.toJson(),
+                'password': 'password123',
+                '_persist_locally': true,
+              });
+            }
+          }
+          await _saveMockUsers();
+
+          return users;
+        }
+      } catch (_) {
+        // Fallback ke mock data jika server offline
+      }
+    }
     await _ensureMockUsersLoaded();
     return _mockUsers.map((data) => UserModel.fromJson(data)).toList();
   }
@@ -529,40 +779,46 @@ class AuthService {
     }
 
     if (!shouldUseMock) {
-      http.Response response;
+      http.Response? response;
       try {
-        response = await http.post(
-          Uri.parse('$activeBaseUrl/users/link-google'),
-          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-          body: jsonEncode({
-            'user_id': userId,
-            'email': activeEmail.isNotEmpty ? activeEmail : targetGoogleEmail,
-            'google_email': targetGoogleEmail,
-            'google_id': googleId,
-            'photo_url': photoUrl,
-          }),
-        ).timeout(const Duration(seconds: 8));
-      } catch (e) {
-        throw Exception('Koneksi ke server backend gagal: $e');
+        response = await requestWithFailover(
+          (base) => http
+              .post(
+                Uri.parse('$base/users/link-google'),
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: jsonEncode({
+                  'user_id': userId,
+                  'email': activeEmail.isNotEmpty ? activeEmail : targetGoogleEmail,
+                  'google_email': targetGoogleEmail,
+                  'google_id': googleId,
+                  'photo_url': photoUrl,
+                }),
+              )
+              .timeout(const Duration(seconds: 6)),
+        );
+      } catch (_) {
+        response = null;
       }
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final updatedUser = UserModel.fromJson(data['user']);
-        await _sessionService.saveSession(
-          AuthResponseModel(
-            token: await _sessionService.getToken() ?? 'active_token_${updatedUser.id}',
-            user: updatedUser,
-          ),
-        );
-        return updatedUser;
-      } else {
-        final errBody = jsonDecode(response.body);
-        throw Exception(errBody['message'] ?? 'Gagal menautkan akun Google.');
+      if (response != null) {
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final updatedUser = UserModel.fromJson(data['user']);
+          await _sessionService.saveSession(
+            AuthResponseModel(
+              token: await _sessionService.getToken() ?? 'active_token_${updatedUser.id}',
+              user: updatedUser,
+            ),
+          );
+          return updatedUser;
+        } else {
+          final errBody = jsonDecode(response.body);
+          throw Exception(errBody['message'] ?? 'Gagal menautkan akun Google.');
+        }
       }
     }
 
-    // Blok Mock HANYA dipanggil jika useMock == true
+    // Blok Mock / Fallback Lokal
     await _ensureMockUsersLoaded();
     int userIndex = -1;
     if (userId != null) {
@@ -613,37 +869,43 @@ class AuthService {
     final cleanEmail = email.trim().toLowerCase();
 
     if (!shouldUseMock) {
-      http.Response response;
+      http.Response? response;
       try {
-        response = await http.post(
-          Uri.parse('$activeBaseUrl/users/unlink-google'),
-          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-          body: jsonEncode({
-            'user_id': userId,
-            'email': cleanEmail,
-          }),
-        ).timeout(const Duration(seconds: 8));
-      } catch (e) {
-        throw Exception('Koneksi ke server backend gagal: $e');
+        response = await requestWithFailover(
+          (base) => http
+              .post(
+                Uri.parse('$base/users/unlink-google'),
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: jsonEncode({
+                  'user_id': userId,
+                  'email': cleanEmail,
+                }),
+              )
+              .timeout(const Duration(seconds: 6)),
+        );
+      } catch (_) {
+        response = null;
       }
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final updatedUser = UserModel.fromJson(data['user']);
-        await _sessionService.saveSession(
-          AuthResponseModel(
-            token: await _sessionService.getToken() ?? 'active_token_${updatedUser.id}',
-            user: updatedUser,
-          ),
-        );
-        return updatedUser;
-      } else {
-        final errBody = jsonDecode(response.body);
-        throw Exception(errBody['message'] ?? 'Gagal memutuskan tautan akun Google.');
+      if (response != null) {
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final updatedUser = UserModel.fromJson(data['user']);
+          await _sessionService.saveSession(
+            AuthResponseModel(
+              token: await _sessionService.getToken() ?? 'active_token_${updatedUser.id}',
+              user: updatedUser,
+            ),
+          );
+          return updatedUser;
+        } else {
+          final errBody = jsonDecode(response.body);
+          throw Exception(errBody['message'] ?? 'Gagal memutuskan tautan akun Google.');
+        }
       }
     }
 
-    // Blok Mock HANYA dipanggil jika useMock == true
+    // Blok Mock / Fallback Lokal
     await _ensureMockUsersLoaded();
     int userIndex = -1;
     if (userId != null) {
@@ -685,8 +947,48 @@ class AuthService {
     required String email,
     required String newPassword,
   }) async {
-    await _ensureMockUsersLoaded();
     final cleanEmail = email.trim().toLowerCase();
+
+    if (!shouldUseMock) {
+      try {
+        final response = await requestWithFailover(
+          (base) => http
+              .post(
+                Uri.parse('$base/users/change-password'),
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: jsonEncode({
+                  'email': cleanEmail,
+                  'new_password': newPassword,
+                }),
+              )
+              .timeout(const Duration(seconds: 6)),
+        );
+
+        if (response.statusCode == 200) {
+          await _ensureMockUsersLoaded();
+          final idx = _mockUsers.indexWhere(
+            (u) => (u['email'] as String).toLowerCase() == cleanEmail,
+          );
+          if (idx != -1) {
+            _mockUsers[idx]['password'] = newPassword;
+            _mockUsers[idx]['_persist_locally'] = true;
+            await _saveMockUsers();
+          }
+          return true;
+        } else {
+          final errBody = jsonDecode(response.body);
+          throw Exception(errBody['message'] ?? 'Gagal memperbarui password.');
+        }
+      } catch (e) {
+        if (e.toString().contains('Gagal memperbarui') ||
+            e.toString().contains('tidak ditemukan')) {
+          rethrow;
+        }
+        // Fallback lokal jika offline
+      }
+    }
+
+    await _ensureMockUsersLoaded();
     final userIndex = _mockUsers.indexWhere(
       (u) => (u['email'] as String).toLowerCase() == cleanEmail,
     );
@@ -708,32 +1010,7 @@ class AuthService {
     required String email,
     required String photoUrl,
   }) async {
-    await _ensureMockUsersLoaded();
-    final cleanEmail = email.trim().toLowerCase();
-    final userIndex = _mockUsers.indexWhere(
-      (u) => (u['email'] as String).toLowerCase() == cleanEmail,
-    );
-
-    if (userIndex == -1) {
-      throw Exception('Akun dengan email "$cleanEmail" tidak ditemukan.');
-    }
-
-    _mockUsers[userIndex]['photo_url'] = photoUrl;
-    _mockUsers[userIndex]['_persist_locally'] = true;
-    await _saveMockUsers();
-
-    final updatedUser = UserModel.fromJson(_mockUsers[userIndex]);
-
-    // Sinkronisasi session lokal jika user yang diedit sedang aktif
-    final currentCached = await _sessionService.getUser();
-    if (currentCached != null && currentCached.email.toLowerCase() == cleanEmail) {
-      final token = await _sessionService.getToken() ?? 'active_token_${updatedUser.id}';
-      await _sessionService.saveSession(
-        AuthResponseModel(token: token, user: updatedUser),
-      );
-    }
-
-    return updatedUser;
+    return updateUserProfile(email: email, photoUrl: photoUrl);
   }
 
   // ============================================================
@@ -745,14 +1022,58 @@ class AuthService {
     String? phone,
     String? photoUrl,
   }) async {
-    await _ensureMockUsersLoaded();
     final cleanEmail = email.trim().toLowerCase();
-    final userIndex = _mockUsers.indexWhere(
+
+    if (!shouldUseMock) {
+      try {
+        final response = await requestWithFailover(
+          (base) => http
+              .post(
+                Uri.parse('$base/users/update-profile'),
+                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                body: jsonEncode({
+                  'email': cleanEmail,
+                  if (name != null) 'name': name.trim(),
+                  if (phone != null) 'phone': phone.trim(),
+                  if (photoUrl != null) 'photo_url': photoUrl,
+                }),
+              )
+              .timeout(const Duration(seconds: 6)),
+        );
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final updatedUser = UserModel.fromJson(data['user']);
+          final currentCached = await _sessionService.getUser();
+          if (currentCached != null && currentCached.email.toLowerCase() == cleanEmail) {
+            final token = await _sessionService.getToken() ?? 'active_token_${updatedUser.id}';
+            await _sessionService.saveSession(
+              AuthResponseModel(token: token, user: updatedUser),
+            );
+          }
+          return updatedUser;
+        }
+      } catch (_) {
+        // Fallback lokal jika server offline
+      }
+    }
+
+    await _ensureMockUsersLoaded();
+    int userIndex = _mockUsers.indexWhere(
       (u) => (u['email'] as String).toLowerCase() == cleanEmail,
     );
 
     if (userIndex == -1) {
-      throw Exception('Akun tidak ditemukan.');
+      final currentCached = await _sessionService.getUser();
+      if (currentCached != null && currentCached.email.toLowerCase() == cleanEmail) {
+        _mockUsers.add({
+          ...currentCached.toJson(),
+          '_persist_locally': true,
+        });
+        userIndex = _mockUsers.length - 1;
+      } else {
+        throw Exception('Akun dengan email "$cleanEmail" tidak ditemukan.');
+      }
     }
 
     if (name != null && name.trim().isNotEmpty) {
@@ -762,7 +1083,7 @@ class AuthService {
       _mockUsers[userIndex]['phone'] = phone.trim();
     }
     if (photoUrl != null) {
-      _mockUsers[userIndex]['photo_url'] = photoUrl;
+      _mockUsers[userIndex]['photo_url'] = photoUrl.trim().isEmpty ? null : photoUrl;
     }
     _mockUsers[userIndex]['_persist_locally'] = true;
     await _saveMockUsers();
@@ -805,6 +1126,22 @@ class AuthService {
   // LOGOUT (MENCABUT SESI & HAPUS TOKEN)
   // ============================================================
   Future<void> logout() async {
+    if (!shouldUseMock) {
+      try {
+        final activeToken = await _sessionService.getToken();
+        if (activeToken != null && activeToken.isNotEmpty) {
+          await http.post(
+            Uri.parse('$activeBaseUrl/auth/logout'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': 'Bearer $activeToken',
+            },
+            body: jsonEncode({'token': activeToken}),
+          ).timeout(const Duration(seconds: 4));
+        }
+      } catch (_) {}
+    }
     try {
       if (await _googleSignIn.isSignedIn()) {
         await _googleSignIn.signOut();

@@ -41,11 +41,13 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      await AuthService.resolveBaseUrl();
       final hasValidSession = await _sessionService.isLoggedIn();
       if (hasValidSession) {
         _token = await _sessionService.getToken();
         _currentUser = await _sessionService.getUser();
         _status = AuthStatus.authenticated;
+        await refreshCurrentUser();
       } else {
         _status = AuthStatus.unauthenticated;
       }
@@ -53,6 +55,26 @@ class AuthProvider extends ChangeNotifier {
       _status = AuthStatus.unauthenticated;
     }
     notifyListeners();
+  }
+
+  // Sinkronkan data profil user yang sedang login dengan database terbaru
+  Future<void> refreshCurrentUser() async {
+    if (_currentUser == null) return;
+    try {
+      final users = await _authService.getAllUsers();
+      final matched = users.where((u) {
+        if (_currentUser!.id != null && u.id == _currentUser!.id) return true;
+        return u.email.toLowerCase() == _currentUser!.email.toLowerCase();
+      }).toList();
+      if (matched.isNotEmpty) {
+        _currentUser = matched.first;
+        final token = _token ?? await _sessionService.getToken() ?? 'active_token_${_currentUser!.id}';
+        await _sessionService.saveSession(
+          AuthResponseModel(token: token, user: _currentUser!),
+        );
+        notifyListeners();
+      }
+    } catch (_) {}
   }
 
   // FR01 | Login Email & Password

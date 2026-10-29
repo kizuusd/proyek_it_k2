@@ -5,7 +5,7 @@ const pool = mysql.createPool({
   port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 3306,
   user: process.env.DB_USER || 'root',
   password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'db_proyek_it_k2',
+  database: process.env.DB_NAME || 'db_tracking_sales',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
@@ -14,7 +14,7 @@ const pool = mysql.createPool({
 async function testConnection() {
   try {
     const connection = await pool.getConnection();
-    console.log('✅ Berhasil terhubung ke database MySQL (db_proyek_it_k2)');
+    console.log('✅ Berhasil terhubung ke database MySQL (db_tracking_sales)');
     connection.release();
     return true;
   } catch (error) {

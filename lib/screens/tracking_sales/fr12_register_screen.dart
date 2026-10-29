@@ -283,9 +283,12 @@ class _FR12RegisterScreenState extends State<FR12RegisterScreen> {
                   children: [
                     const Icon(Icons.admin_panel_settings, size: 14, color: Colors.white),
                     const SizedBox(width: 6),
-                    Text(
-                      'Pendaftar: ${currentUser.name} (${currentUser.roleDisplayTitle})',
-                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                    Flexible(
+                      child: Text(
+                        'Pendaftar: ${currentUser.name} (${currentUser.roleDisplayTitle})',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ],
                 ),
@@ -546,9 +549,11 @@ class _FR12RegisterScreenState extends State<FR12RegisterScreen> {
                       children: [
                         SvgPicture.asset('assets/icons/google-icon.svg', width: 18, height: 18),
                         const SizedBox(width: 8),
-                        const Text(
-                          'Izinkan Login Akun Google (Gmail)',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: kTextColor),
+                        const Expanded(
+                          child: Text(
+                            'Izinkan Login Akun Google (Gmail)',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: kTextColor),
+                          ),
                         ),
                       ],
                     ),

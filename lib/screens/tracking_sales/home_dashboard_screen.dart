@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/app_drawer.dart';
+import '../../widgets/user_avatar.dart';
 import 'fr02_master_barang_screen.dart';
 import 'fr03_master_harga_screen.dart';
 import 'fr04_jadwal_rute_screen.dart';
@@ -180,12 +181,36 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     final userRole = user?.roleDisplayTitle ?? 'Sales Lapangan';
 
     Color roleBadgeColor;
+    Color rolePrimaryColor;
+    Color roleLightColor;
+    LinearGradient roleGradient;
     if (user?.isSuperAdmin == true) {
-      roleBadgeColor = Colors.purple;
+      roleBadgeColor = const Color(0xFF581C87);
+      rolePrimaryColor = const Color(0xFF6B21A8);
+      roleLightColor = const Color(0xFFF3E8FF);
+      roleGradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF6B21A8), Color(0xFF4C1D95)],
+      );
     } else if (user?.isAdmin == true) {
-      roleBadgeColor = Colors.blue.shade700;
+      roleBadgeColor = Colors.blue.shade800;
+      rolePrimaryColor = const Color(0xFF1D4ED8);
+      roleLightColor = const Color(0xFFEFF6FF);
+      roleGradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF1D4ED8), Color(0xFF1E3A8A)],
+      );
     } else {
-      roleBadgeColor = Colors.teal.shade700;
+      roleBadgeColor = const Color(0xFF065F46);
+      rolePrimaryColor = const Color(0xFF047857);
+      roleLightColor = const Color(0xFFECFDF5);
+      roleGradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF047857), Color(0xFF065F46)],
+      );
     }
 
     return Scaffold(
@@ -208,7 +233,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
         centerTitle: false,
         actions: [
           IconButton(
-            icon: const Icon(Icons.person_outline, color: kPrimaryColor),
+            icon: Icon(Icons.person_outline, color: rolePrimaryColor),
             tooltip: 'Profil Saya',
             onPressed: () {
               Navigator.push(
@@ -235,11 +260,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 padding: const EdgeInsets.all(20),
                 margin: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  gradient: kPrimaryGradientColor,
+                  gradient: roleGradient,
                   borderRadius: BorderRadius.circular(20),
                   boxShadow: [
                     BoxShadow(
-                      color: kPrimaryColor.withValues(alpha: 0.3),
+                      color: rolePrimaryColor.withValues(alpha: 0.3),
                       blurRadius: 10,
                       offset: const Offset(0, 5),
                     ),
@@ -249,23 +274,20 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                   children: [
                     Row(
                       children: [
-                        // Avatar
-                        CircleAvatar(
-                          radius: 30,
-                          backgroundColor: Colors.white,
-                          backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
-                              ? NetworkImage(user.photoUrl!)
-                              : null,
-                          child: user?.photoUrl == null || user!.photoUrl!.isEmpty
-                              ? Text(
-                                  userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                                  style: const TextStyle(
-                                    fontSize: 26,
-                                    fontWeight: FontWeight.bold,
-                                    color: kPrimaryColor,
-                                  ),
-                                )
-                              : null,
+                        // Avatar (Sesuai Foto Profil Login Gmail / Akun)
+                        Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                          ),
+                          child: UserAvatar(
+                            photoUrl: user?.photoUrl,
+                            name: userName,
+                            radius: 30,
+                            backgroundColor: Colors.white,
+                            textColor: rolePrimaryColor,
+                          ),
                         ),
                         const SizedBox(width: 15),
                         Expanded(
@@ -393,43 +415,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 ),
                 const SizedBox(height: 16),
               ] else ...[
-                const SizedBox(height: 20),
+                const SizedBox(height: 8),
               ],
 
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Menu Navigasi FR (Tracking Sales)',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: kTextColor,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.menu_open_rounded, size: 16, color: kPrimaryColor),
-                          SizedBox(width: 4),
-                          Text(
-                            'Buka Sidebar Menu (10 Modul)',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: kPrimaryColor),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: 20.0),
                 child: Text(
@@ -445,67 +433,76 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
 
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  childAspectRatio: 1.45,
-                  children: [
-                    _buildKpiCard(
-                      icon: Icons.account_balance_wallet,
-                      iconBgColor: Colors.blue.shade50,
-                      iconColor: Colors.blue.shade700,
-                      title: 'Pendapatan Minggu Ini',
-                      value: 'Rp 15.450.000',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const FR05PendapatanScreen()),
-                        );
-                      },
-                    ),
-                    _buildKpiCard(
-                      icon: Icons.map,
-                      iconBgColor: Colors.green.shade50,
-                      iconColor: Colors.green.shade700,
-                      title: 'Jadwal Rute',
-                      value: '5 Titik Kunjungan',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const FR04PenjadwalanRuteScreen()),
-                        );
-                      },
-                    ),
-                    _buildKpiCard(
-                      icon: Icons.fingerprint,
-                      iconBgColor: Colors.teal.shade50,
-                      iconColor: Colors.teal.shade700,
-                      title: 'Status Presensi',
-                      value: 'Hadir (07:45 WIB)',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const FR08AbsensiScreen()),
-                        );
-                      },
-                    ),
-                    _buildKpiCard(
-                      icon: Icons.assignment_turned_in,
-                      iconBgColor: Colors.purple.shade50,
-                      iconColor: Colors.purple.shade700,
-                      title: 'Status Perizinan',
-                      value: 'Terverifikasi',
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const FR09PengajuanIzinScreen()),
-                        );
-                      },
-                    ),
-                  ],
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final int cols = constraints.maxWidth >= 680 ? 4 : 2;
+                    final double itemWidth =
+                        (constraints.maxWidth - ((cols - 1) * 12)) / cols;
+                    final double aspect = (itemWidth / 108).clamp(1.15, 1.85);
+
+                    return GridView.count(
+                      crossAxisCount: cols,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      childAspectRatio: aspect,
+                      children: [
+                        _buildKpiCard(
+                          icon: Icons.account_balance_wallet,
+                          iconBgColor: Colors.blue.shade50,
+                          iconColor: Colors.blue.shade700,
+                          title: 'Pendapatan Minggu Ini',
+                          value: 'Rp 15.450.000',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const FR05PendapatanScreen()),
+                            );
+                          },
+                        ),
+                        _buildKpiCard(
+                          icon: Icons.map,
+                          iconBgColor: Colors.green.shade50,
+                          iconColor: Colors.green.shade700,
+                          title: 'Jadwal Rute',
+                          value: '5 Titik Kunjungan',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const FR04PenjadwalanRuteScreen()),
+                            );
+                          },
+                        ),
+                        _buildKpiCard(
+                          icon: Icons.fingerprint,
+                          iconBgColor: Colors.teal.shade50,
+                          iconColor: Colors.teal.shade700,
+                          title: 'Status Presensi',
+                          value: 'Hadir (07:45 WIB)',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const FR08AbsensiScreen()),
+                            );
+                          },
+                        ),
+                        _buildKpiCard(
+                          icon: Icons.assignment_turned_in,
+                          iconBgColor: Colors.purple.shade50,
+                          iconColor: Colors.purple.shade700,
+                          title: 'Status Perizinan',
+                          value: 'Terverifikasi',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const FR09PengajuanIzinScreen()),
+                            );
+                          },
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
 
@@ -529,18 +526,24 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    _buildQuickActionBtn(
-                      icon: Icons.inventory_2,
-                      label: 'Barang',
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const FR02MasterBarangScreen()),
+                    if (user?.isSuperAdmin == true || user?.isAdmin == true) ...[
+                      _buildQuickActionBtn(
+                        icon: Icons.inventory_2,
+                        label: 'Barang',
+                        accentColor: rolePrimaryColor,
+                        bgColor: roleLightColor,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const FR02MasterBarangScreen()),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
+                      const SizedBox(width: 10),
+                    ],
                     _buildQuickActionBtn(
                       icon: Icons.monetization_on,
                       label: 'Harga',
+                      accentColor: rolePrimaryColor,
+                      bgColor: roleLightColor,
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => const FR03MasterHargaScreen()),
@@ -550,20 +553,26 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     _buildQuickActionBtn(
                       icon: Icons.my_location,
                       label: 'Monitoring',
+                      accentColor: rolePrimaryColor,
+                      bgColor: roleLightColor,
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(builder: (context) => const FR06MonitoringPosisiScreen()),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    _buildQuickActionBtn(
-                      icon: Icons.add_shopping_cart,
-                      label: 'Req Barang',
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const FR10PengajuanBarangScreen()),
+                    if (user?.isSuperAdmin != true && user?.isAdmin != true) ...[
+                      const SizedBox(width: 10),
+                      _buildQuickActionBtn(
+                        icon: Icons.add_shopping_cart,
+                        label: 'Req Barang',
+                        accentColor: rolePrimaryColor,
+                        bgColor: roleLightColor,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => const FR10PengajuanBarangScreen()),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -695,6 +704,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   Widget _buildQuickActionBtn({
     required IconData icon,
     required String label,
+    Color accentColor = kPrimaryColor,
+    Color bgColor = kPrimaryLightColor,
     required VoidCallback onTap,
   }) {
     return Expanded(
@@ -719,20 +730,26 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  color: kPrimaryLightColor,
+                decoration: BoxDecoration(
+                  color: bgColor,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, color: kPrimaryColor, size: 20),
+                child: Icon(icon, color: accentColor, size: 20),
               ),
               const SizedBox(height: 6),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                  color: kTextColor,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: kTextColor,
+                    ),
+                  ),
                 ),
               ),
             ],

@@ -30,7 +30,7 @@ class AppTheme {
           elevation: 0,
           backgroundColor: kPrimaryColor,
           foregroundColor: Colors.white,
-          minimumSize: const Size(double.infinity, 48),
+          minimumSize: const Size(88, 48),
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.all(Radius.circular(16)),
           ),

@@ -6,7 +6,7 @@ const { pool } = require('../config/db');
 
 function formatUser(row) {
   return {
-    id: row.id,
+    id: Number(row.id),
     name: row.name,
     email: row.email,
     phone: row.phone || null,
@@ -15,6 +15,7 @@ function formatUser(row) {
     is_active: Boolean(row.is_active === 1 || row.is_active === true),
     google_id: row.google_id || null,
     google_email: row.google_email || null,
+    device_token: row.device_token || null,
     created_by: row.created_by || null,
     last_login_at: row.last_login_at ? new Date(row.last_login_at).toISOString() : null,
   };
@@ -25,7 +26,9 @@ function formatUser(row) {
 // --------------------------------------------------------
 router.get('/', async (req, res) => {
   try {
-    const [rows] = await pool.query('SELECT * FROM users ORDER BY id ASC');
+    const [rows] = await pool.query(
+      'SELECT * FROM users WHERE deleted_at IS NULL ORDER BY id ASC'
+    );
     return res.json({
       status: true,
       count: rows.length,
@@ -43,16 +46,24 @@ router.get('/', async (req, res) => {
 router.post('/link-google', async (req, res) => {
   try {
     const { user_id, email, google_email, google_id, photo_url } = req.body;
-    console.log(`[link-google] Menerima request: user_id=${user_id}, email=${email}, google_email=${google_email}, google_id=${google_id}`);
+    console.log(
+      `[link-google] Menerima request: user_id=${user_id}, email=${email}, google_email=${google_email}, google_id=${google_id}`
+    );
 
     let user = null;
     if (user_id) {
-      const [idRows] = await pool.query('SELECT * FROM users WHERE id = ? LIMIT 1', [user_id]);
+      const [idRows] = await pool.query(
+        'SELECT * FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1',
+        [user_id]
+      );
       if (idRows.length > 0) user = idRows[0];
     }
     if (!user && email) {
       const cleanEmail = email.trim().toLowerCase();
-      const [emailRows] = await pool.query('SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1', [cleanEmail]);
+      const [emailRows] = await pool.query(
+        'SELECT * FROM users WHERE LOWER(email) = ? AND deleted_at IS NULL LIMIT 1',
+        [cleanEmail]
+      );
       if (emailRows.length > 0) user = emailRows[0];
     }
 
@@ -68,7 +79,7 @@ router.post('/link-google', async (req, res) => {
 
     // Cek apakah email Google ini sudah digunakan di akun pengguna lain
     const [existingLinked] = await pool.query(
-      'SELECT id, name, email FROM users WHERE LOWER(google_email) = ? AND id != ? LIMIT 1',
+      'SELECT id, name, email FROM users WHERE LOWER(google_email) = ? AND id != ? AND deleted_at IS NULL LIMIT 1',
       [cleanGoogleEmail, user.id]
     );
     if (existingLinked.length > 0) {
@@ -78,17 +89,16 @@ router.post('/link-google', async (req, res) => {
       });
     }
 
-    const finalGid = google_id && String(google_id).trim().length > 0
+    const finalGid =
+      google_id && String(google_id).trim().length > 0
         ? String(google_id).trim()
         : `google_oauth_${user.id}_${crypto.randomBytes(4).toString('hex')}`;
     const finalPhoto = photo_url || user.photo_url;
 
-    await pool.query('UPDATE users SET google_id = ?, google_email = ?, photo_url = ? WHERE id = ?', [
-      finalGid,
-      cleanGoogleEmail,
-      finalPhoto,
-      user.id,
-    ]);
+    await pool.query(
+      'UPDATE users SET google_id = ?, google_email = ?, photo_url = ? WHERE id = ?',
+      [finalGid, cleanGoogleEmail, finalPhoto, user.id]
+    );
 
     const [updatedRows] = await pool.query('SELECT * FROM users WHERE id = ?', [user.id]);
     console.log(`[link-google] SUKSES: user_id=${user.id} (${user.email}) ditautkan ke ${cleanGoogleEmail}`);
@@ -113,12 +123,18 @@ router.post('/unlink-google', async (req, res) => {
 
     let user = null;
     if (user_id) {
-      const [idRows] = await pool.query('SELECT * FROM users WHERE id = ? LIMIT 1', [user_id]);
+      const [idRows] = await pool.query(
+        'SELECT * FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1',
+        [user_id]
+      );
       if (idRows.length > 0) user = idRows[0];
     }
     if (!user && email) {
       const cleanEmail = email.trim().toLowerCase();
-      const [emailRows] = await pool.query('SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1', [cleanEmail]);
+      const [emailRows] = await pool.query(
+        'SELECT * FROM users WHERE LOWER(email) = ? AND deleted_at IS NULL LIMIT 1',
+        [cleanEmail]
+      );
       if (emailRows.length > 0) user = emailRows[0];
     }
 
@@ -127,7 +143,10 @@ router.post('/unlink-google', async (req, res) => {
       return res.status(404).json({ message: 'Akun pengguna tidak ditemukan dalam sistem database.' });
     }
 
-    await pool.query('UPDATE users SET google_id = NULL, google_email = NULL WHERE id = ?', [user.id]);
+    await pool.query(
+      'UPDATE users SET google_id = NULL, google_email = NULL WHERE id = ?',
+      [user.id]
+    );
 
     const [updatedRows] = await pool.query('SELECT * FROM users WHERE id = ?', [user.id]);
     console.log(`[unlink-google] SUKSES: user_id=${user.id} (${user.email}) diputuskan tautan Googlenya`);
@@ -153,21 +172,29 @@ router.post('/change-password', async (req, res) => {
     }
 
     const cleanEmail = email.trim().toLowerCase();
-    const [rows] = await pool.query('SELECT * FROM users WHERE LOWER(email) = ? LIMIT 1', [cleanEmail]);
+    const [rows] = await pool.query(
+      'SELECT * FROM users WHERE LOWER(email) = ? AND deleted_at IS NULL LIMIT 1',
+      [cleanEmail]
+    );
 
     if (rows.length === 0) {
       return res.status(404).json({ message: 'Akun tidak ditemukan dalam sistem.' });
     }
 
     const user = rows[0];
+    const storedPassword = user.password || '';
 
     if (old_password) {
       let match = false;
-      if (user.password.startsWith('$2y$') || user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
-        const normalized = user.password.replace(/^\$2y\$/, '$2a$');
+      if (
+        storedPassword.startsWith('$2y$') ||
+        storedPassword.startsWith('$2a$') ||
+        storedPassword.startsWith('$2b$')
+      ) {
+        const normalized = storedPassword.replace(/^\$2y\$/, '$2a$');
         match = await bcrypt.compare(old_password, normalized);
       }
-      if (!match && (old_password === user.password || old_password === 'password123')) {
+      if (!match && (old_password === storedPassword || old_password === 'password123')) {
         match = true;
       }
       if (!match) {
@@ -185,6 +212,90 @@ router.post('/change-password', async (req, res) => {
   } catch (error) {
     console.error('Error saat ganti password:', error);
     return res.status(500).json({ message: 'Terjadi kesalahan pada server: ' + error.message });
+  }
+});
+
+// --------------------------------------------------------
+// 5. POST /api/users/update-profile (Ubah nama, telepon, foto profil)
+// --------------------------------------------------------
+router.post('/update-profile', async (req, res) => {
+  try {
+    const { user_id, email, name, phone, photo_url } = req.body;
+
+    let user = null;
+    if (user_id) {
+      const [idRows] = await pool.query(
+        'SELECT * FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1',
+        [user_id]
+      );
+      if (idRows.length > 0) user = idRows[0];
+    }
+    if (!user && email) {
+      const cleanEmail = email.trim().toLowerCase();
+      const [emailRows] = await pool.query(
+        'SELECT * FROM users WHERE LOWER(email) = ? AND deleted_at IS NULL LIMIT 1',
+        [cleanEmail]
+      );
+      if (emailRows.length > 0) user = emailRows[0];
+    }
+
+    if (!user) {
+      return res.status(404).json({ message: 'Akun pengguna tidak ditemukan.' });
+    }
+
+    const updatedName = name !== undefined && String(name).trim() !== '' ? String(name).trim() : user.name;
+    const updatedPhone = phone !== undefined ? (String(phone).trim() || null) : user.phone;
+    const updatedPhoto = photo_url !== undefined ? (String(photo_url).trim() || null) : user.photo_url;
+
+    await pool.query(
+      'UPDATE users SET name = ?, phone = ?, photo_url = ? WHERE id = ?',
+      [updatedName, updatedPhone, updatedPhoto, user.id]
+    );
+
+    const [updatedRows] = await pool.query('SELECT * FROM users WHERE id = ?', [user.id]);
+    return res.json({
+      status: true,
+      message: 'Profil berhasil diperbarui.',
+      user: formatUser(updatedRows[0]),
+    });
+  } catch (error) {
+    console.error('Error saat update profil:', error);
+    return res.status(500).json({ message: 'Terjadi kesalahan pada server: ' + error.message });
+  }
+});
+
+// --------------------------------------------------------
+// 6. GET /api/users/avatar-proxy (Proxy CORS gambar eksternal untuk Flutter Web)
+// --------------------------------------------------------
+router.get('/avatar-proxy', async (req, res) => {
+  try {
+    const targetUrl = req.query.url;
+    if (!targetUrl || (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://'))) {
+      return res.status(400).send('Invalid URL');
+    }
+
+    const response = await fetch(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        Accept: 'image/avif,image/webp,image/apng,image/png,image/jpeg,image/*,*/*;q=0.8',
+      },
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).send('Failed to fetch image');
+    }
+
+    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.send(buffer);
+  } catch (error) {
+    console.warn('[avatar-proxy] Gagal memuat gambar:', error.message);
+    return res.status(502).send('Error fetching image');
   }
 });
 

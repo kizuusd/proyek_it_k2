@@ -13,6 +13,7 @@ import '../screens/tracking_sales/fr09_pengajuan_izin_screen.dart';
 import '../screens/tracking_sales/fr10_pengajuan_barang_screen.dart';
 import '../screens/tracking_sales/fr11_profil_screen.dart';
 import '../screens/tracking_sales/fr12_register_screen.dart';
+import 'user_avatar.dart';
 
 class AppDrawer extends StatelessWidget {
   final String currentRoute;
@@ -71,7 +72,16 @@ class AppDrawer extends StatelessWidget {
     if (currentRoute == routeName) return;
 
     if (routeName == 'dashboard') {
-      Navigator.pushReplacementNamed(context, '/dashboard');
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      } else {
+        Navigator.pushReplacementNamed(context, '/dashboard');
+      }
+    } else if (currentRoute != 'dashboard') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => page),
+      );
     } else {
       Navigator.push(
         context,
@@ -89,12 +99,32 @@ class AppDrawer extends StatelessWidget {
     final userRole = user?.roleDisplayTitle ?? 'Sales Lapangan';
 
     Color roleBadgeColor;
+    Color rolePrimaryColor;
+    LinearGradient roleGradient;
     if (user?.isSuperAdmin == true) {
-      roleBadgeColor = Colors.purple;
+      roleBadgeColor = const Color(0xFF581C87);
+      rolePrimaryColor = const Color(0xFF6B21A8);
+      roleGradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF6B21A8), Color(0xFF4C1D95)],
+      );
     } else if (user?.isAdmin == true) {
-      roleBadgeColor = Colors.blue.shade700;
+      roleBadgeColor = Colors.blue.shade800;
+      rolePrimaryColor = const Color(0xFF1D4ED8);
+      roleGradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF1D4ED8), Color(0xFF1E3A8A)],
+      );
     } else {
-      roleBadgeColor = Colors.teal.shade700;
+      roleBadgeColor = const Color(0xFF065F46);
+      rolePrimaryColor = const Color(0xFF047857);
+      roleGradient = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF047857), Color(0xFF065F46)],
+      );
     }
 
     final bool isManagerial = (user?.isSuperAdmin == true || user?.isAdmin == true);
@@ -108,30 +138,27 @@ class AppDrawer extends StatelessWidget {
           Container(
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(16, 44, 16, 16),
-            decoration: const BoxDecoration(
-              gradient: kPrimaryGradientColor,
+            decoration: BoxDecoration(
+              gradient: roleGradient,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 28,
-                      backgroundColor: Colors.white,
-                      backgroundImage: user?.photoUrl != null && user!.photoUrl!.isNotEmpty
-                          ? NetworkImage(user.photoUrl!)
-                          : null,
-                      child: user?.photoUrl == null || user!.photoUrl!.isEmpty
-                          ? Text(
-                              userName.isNotEmpty ? userName[0].toUpperCase() : 'U',
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: kPrimaryColor,
-                              ),
-                            )
-                          : null,
+                    Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: UserAvatar(
+                        photoUrl: user?.photoUrl,
+                        name: userName,
+                        radius: 26,
+                        backgroundColor: Colors.white,
+                        textColor: rolePrimaryColor,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -228,17 +255,18 @@ class AppDrawer extends StatelessWidget {
 
                 const Divider(height: 16, indent: 16, endIndent: 16),
                 _buildSectionHeader('MASTER DATA & LOGISTIK'),
-                _buildDrawerItem(
-                  context: context,
-                  icon: Icons.inventory_2_outlined,
-                  title: 'Master Barang',
-                  routeName: 'master_barang',
-                  onTap: () => _navigateTo(
-                    context,
-                    const FR02MasterBarangScreen(),
-                    'master_barang',
+                if (user?.isSuperAdmin == true || user?.isAdmin == true)
+                  _buildDrawerItem(
+                    context: context,
+                    icon: Icons.inventory_2_outlined,
+                    title: 'Master Barang',
+                    routeName: 'master_barang',
+                    onTap: () => _navigateTo(
+                      context,
+                      const FR02MasterBarangScreen(),
+                      'master_barang',
+                    ),
                   ),
-                ),
                 _buildDrawerItem(
                   context: context,
                   icon: Icons.monetization_on_outlined,
@@ -261,17 +289,18 @@ class AppDrawer extends StatelessWidget {
                     'jadwal_rute',
                   ),
                 ),
-                _buildDrawerItem(
-                  context: context,
-                  icon: Icons.add_shopping_cart_outlined,
-                  title: 'Pengajuan Barang (Req)',
-                  routeName: 'pengajuan_barang',
-                  onTap: () => _navigateTo(
-                    context,
-                    const FR10PengajuanBarangScreen(),
-                    'pengajuan_barang',
+                if (user?.isSuperAdmin != true && user?.isAdmin != true)
+                  _buildDrawerItem(
+                    context: context,
+                    icon: Icons.add_shopping_cart_outlined,
+                    title: 'Pengajuan Barang (Req)',
+                    routeName: 'pengajuan_barang',
+                    onTap: () => _navigateTo(
+                      context,
+                      const FR10PengajuanBarangScreen(),
+                      'pengajuan_barang',
+                    ),
                   ),
-                ),
 
                 const Divider(height: 16, indent: 16, endIndent: 16),
                 _buildSectionHeader('OPERASIONAL SALES'),
@@ -442,11 +471,18 @@ class AppDrawer extends StatelessWidget {
     required VoidCallback onTap,
   }) {
     final bool isSelected = currentRoute == routeName;
+    final user = context.read<AuthProvider>().currentUser;
+    final Color activeColor = user?.isSuperAdmin == true
+        ? const Color(0xFF6B21A8)
+        : (user?.isAdmin == true ? const Color(0xFF1D4ED8) : const Color(0xFF047857));
+    final Color activeBgColor = user?.isSuperAdmin == true
+        ? const Color(0xFFF3E8FF)
+        : (user?.isAdmin == true ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       child: Material(
-        color: isSelected ? kPrimaryLightColor : Colors.transparent,
+        color: isSelected ? activeBgColor : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
         child: ListTile(
           dense: true,
@@ -454,22 +490,22 @@ class AppDrawer extends StatelessWidget {
           leading: Icon(
             icon,
             size: 22,
-            color: iconColor ?? (isSelected ? kPrimaryColor : const Color(0xFF4B5563)),
+            color: iconColor ?? (isSelected ? activeColor : const Color(0xFF4B5563)),
           ),
           title: Text(
             title,
             style: TextStyle(
               fontSize: 13,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-              color: textColor ?? (isSelected ? kPrimaryColor : kTextColor),
+              color: textColor ?? (isSelected ? activeColor : kTextColor),
             ),
           ),
           trailing: isSelected
               ? Container(
                   width: 6,
                   height: 6,
-                  decoration: const BoxDecoration(
-                    color: kPrimaryColor,
+                  decoration: BoxDecoration(
+                    color: activeColor,
                     shape: BoxShape.circle,
                   ),
                 )
