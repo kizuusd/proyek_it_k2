@@ -641,7 +641,7 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
           onPressed: _backToDashboard,
         ),
         title: const Text(
-          'Master Barang Sales',
+          'Data Barang',
           style: TextStyle(
             color: kTextColor,
             fontWeight: FontWeight.bold,
@@ -1022,7 +1022,7 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
         ? '${currentUser.name} ($reviewerRole)'
         : reviewerRole;
     final finalApprovedQty = item.qtyDiajukan;
-    final finalNote = 'Disetujui oleh $reviewerDisplay melalui Master Barang.';
+    final finalNote = 'Disetujui oleh $reviewerDisplay melalui Data Barang.';
 
     setState(() {
       item.status = StatusPengajuanStok.disetujui;

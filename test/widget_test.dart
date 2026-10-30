@@ -258,8 +258,8 @@ void main() {
     expect(find.descendant(of: drawerFinder, matching: find.text('NAVIGASI UTAMA')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Dashboard Sales')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('MASTER DATA & LOGISTIK')), findsOneWidget);
-    expect(find.descendant(of: drawerFinder, matching: find.text('Master Barang')), findsOneWidget);
-    expect(find.descendant(of: drawerFinder, matching: find.text('Master Harga')), findsOneWidget);
+    expect(find.descendant(of: drawerFinder, matching: find.text('Data Barang')), findsOneWidget);
+    expect(find.descendant(of: drawerFinder, matching: find.text('Daftar Harga')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Jadwal Rute')), findsOneWidget);
     // Menu Pengajuan Barang tidak ditampilkan untuk role Owner & Admin
     expect(find.descendant(of: drawerFinder, matching: find.text('Pengajuan Barang (Req)')), findsNothing);
@@ -278,12 +278,12 @@ void main() {
     expect(find.descendant(of: drawerFinder, matching: find.text('Profil Saya')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Keluar (Logout)')), findsOneWidget);
 
-    // Uji navigasi: Klik salah satu menu di sidebar (Master Barang)
-    await tester.tap(find.descendant(of: drawerFinder, matching: find.text('Master Barang')));
+    // Uji navigasi: Klik salah satu menu di sidebar (Data Barang)
+    await tester.tap(find.descendant(of: drawerFinder, matching: find.text('Data Barang')));
     await tester.pumpAndSettle();
 
-    // Layar Master Barang berhasil terbuka
-    expect(find.text('Master Barang Sales'), findsOneWidget);
+    // Layar Data Barang berhasil terbuka
+    expect(find.text('Data Barang'), findsOneWidget);
 
     // Tekan tombol Back di AppBar -> langsung kembali ke Dashboard Sales dalam sekali klik
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
@@ -332,7 +332,7 @@ void main() {
     expect(find.descendant(of: drawerFinder, matching: find.text('Pengajuan Barang (Req)')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Pengajuan Izin Sales')), findsOneWidget);
     // Menu Master Barang dan Daftarkan Sales Baru TIDAK TAMPIL untuk role Sales
-    expect(find.descendant(of: drawerFinder, matching: find.text('Master Barang')), findsNothing);
+    expect(find.descendant(of: drawerFinder, matching: find.text('Data Barang')), findsNothing);
     expect(find.descendant(of: drawerFinder, matching: find.text('Daftarkan Sales Baru')), findsNothing);
   });
 

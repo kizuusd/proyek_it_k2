@@ -45,19 +45,23 @@ class AppDrawer extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Batal', style: TextStyle(color: kSecondaryColor)),
+            child:
+                const Text('Batal', style: TextStyle(color: kSecondaryColor)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.redAccent,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () async {
               Navigator.of(ctx).pop();
-              final authProvider = Provider.of<AuthProvider>(context, listen: false);
+              final authProvider =
+                  Provider.of<AuthProvider>(context, listen: false);
               await authProvider.logout();
               if (context.mounted) {
-                Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
+                Navigator.pushNamedAndRemoveUntil(
+                    context, '/login', (route) => false);
               }
             },
             child: const Text('Keluar', style: TextStyle(color: Colors.white)),
@@ -127,8 +131,10 @@ class AppDrawer extends StatelessWidget {
       );
     }
 
-    final bool isManagerial = (user?.isSuperAdmin == true || user?.isAdmin == true);
-    final String izinMenuTitle = isManagerial ? 'Daftar Izin Sales' : 'Pengajuan Izin Sales';
+    final bool isManagerial =
+        (user?.isSuperAdmin == true || user?.isAdmin == true);
+    final String izinMenuTitle =
+        isManagerial ? 'Daftar Izin Sales' : 'Pengajuan Izin Sales';
 
     return Drawer(
       backgroundColor: Colors.white,
@@ -200,11 +206,13 @@ class AppDrawer extends StatelessWidget {
                           ),
                           const SizedBox(height: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
                             decoration: BoxDecoration(
                               color: roleBadgeColor.withValues(alpha: 0.85),
                               borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.white54, width: 0.8),
+                              border:
+                                  Border.all(color: Colors.white54, width: 0.8),
                             ),
                             child: Text(
                               userRole,
@@ -252,14 +260,13 @@ class AppDrawer extends StatelessWidget {
                     }
                   },
                 ),
-
                 const Divider(height: 16, indent: 16, endIndent: 16),
                 _buildSectionHeader('MASTER DATA & LOGISTIK'),
                 if (user?.isSuperAdmin == true || user?.isAdmin == true)
                   _buildDrawerItem(
                     context: context,
                     icon: Icons.inventory_2_outlined,
-                    title: 'Master Barang',
+                    title: 'Data Barang',
                     routeName: 'master_barang',
                     onTap: () => _navigateTo(
                       context,
@@ -270,7 +277,7 @@ class AppDrawer extends StatelessWidget {
                 _buildDrawerItem(
                   context: context,
                   icon: Icons.monetization_on_outlined,
-                  title: 'Master Harga',
+                  title: 'Daftar Harga',
                   routeName: 'master_harga',
                   onTap: () => _navigateTo(
                     context,
@@ -301,7 +308,6 @@ class AppDrawer extends StatelessWidget {
                       'pengajuan_barang',
                     ),
                   ),
-
                 const Divider(height: 16, indent: 16, endIndent: 16),
                 _buildSectionHeader('OPERASIONAL SALES'),
                 _buildDrawerItem(
@@ -372,7 +378,6 @@ class AppDrawer extends StatelessWidget {
                     'pengajuan_izin',
                   ),
                 ),
-
                 const Divider(height: 16, indent: 16, endIndent: 16),
                 _buildSectionHeader('AKUN & PENGATURAN'),
                 _buildDrawerItem(
@@ -474,10 +479,14 @@ class AppDrawer extends StatelessWidget {
     final user = context.read<AuthProvider>().currentUser;
     final Color activeColor = user?.isSuperAdmin == true
         ? const Color(0xFF6B21A8)
-        : (user?.isAdmin == true ? const Color(0xFF1D4ED8) : const Color(0xFF047857));
+        : (user?.isAdmin == true
+            ? const Color(0xFF1D4ED8)
+            : const Color(0xFF047857));
     final Color activeBgColor = user?.isSuperAdmin == true
         ? const Color(0xFFF3E8FF)
-        : (user?.isAdmin == true ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5));
+        : (user?.isAdmin == true
+            ? const Color(0xFFEFF6FF)
+            : const Color(0xFFECFDF5));
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
@@ -486,11 +495,13 @@ class AppDrawer extends StatelessWidget {
         borderRadius: BorderRadius.circular(10),
         child: ListTile(
           dense: true,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           leading: Icon(
             icon,
             size: 22,
-            color: iconColor ?? (isSelected ? activeColor : const Color(0xFF4B5563)),
+            color: iconColor ??
+                (isSelected ? activeColor : const Color(0xFF4B5563)),
           ),
           title: Text(
             title,
