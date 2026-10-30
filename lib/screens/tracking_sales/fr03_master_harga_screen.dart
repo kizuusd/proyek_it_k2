@@ -78,7 +78,7 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: false, // Menghindari crash pada Flutter Web karena On-Screen Keyboard
       appBar: AppBar(
-        title: const Text('Master Harga Produk', style: TextStyle(color: kTextColor)),
+        title: const Text('Harga Barang', style: TextStyle(color: kTextColor)),
         backgroundColor: Colors.white,
         elevation: 0,
         iconTheme: const IconThemeData(color: kTextColor),
