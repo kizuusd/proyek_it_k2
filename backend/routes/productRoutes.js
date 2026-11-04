@@ -7,12 +7,17 @@ let schemaInitialized = false;
 async function ensureProductAndStockSchema() {
   if (schemaInitialized) return;
   try {
-    // 1. Pastikan kolom kategori & foto_url LONGTEXT ada di tabel products
+    // 1. Pastikan kolom kategori, harga & foto_url LONGTEXT ada di tabel products
     const [prodCols] = await pool.query('SHOW COLUMNS FROM products');
     const colNames = prodCols.map((c) => c.Field);
     if (!colNames.includes('kategori')) {
       await pool.query(
         "ALTER TABLE products ADD COLUMN kategori VARCHAR(100) NOT NULL DEFAULT 'Plastik' AFTER nama_barang"
+      );
+    }
+    if (!colNames.includes('harga')) {
+      await pool.query(
+        "ALTER TABLE products ADD COLUMN harga INT NOT NULL DEFAULT 15000 AFTER satuan"
       );
     }
     await pool.query('ALTER TABLE products MODIFY COLUMN foto_url LONGTEXT DEFAULT NULL');
@@ -82,6 +87,7 @@ function formatProductRow(row) {
     kategori: inferCategory(row),
     deskripsi: row.deskripsi || '',
     satuan: row.satuan || 'Pack',
+    harga: row.harga != null ? Number(row.harga) : 15000,
     stok_gudang: stokGudang,
     stok_sales: row.stok_sales != null ? Number(row.stok_sales) : 0,
     foto_url: row.foto_url || null,
@@ -477,6 +483,58 @@ router.delete('/:id', async (req, res) => {
     return res.status(500).json({
       message: 'Gagal menghapus produk: ' + error.message,
     });
+  }
+});
+
+// --------------------------------------------------------
+// 6. PATCH /api/products/:id/price
+//    Update harga jual produk resmi oleh Admin/Owner
+// --------------------------------------------------------
+router.patch('/:id/price', async (req, res) => {
+  try {
+    await ensureProductAndStockSchema();
+    const prodId = Number(req.params.id);
+    const { harga, updated_by } = req.body;
+    const finalHarga = Math.max(0, Number(harga) || 0);
+
+    const [existing] = await pool.query(
+      'SELECT * FROM products WHERE id = ? AND deleted_at IS NULL LIMIT 1',
+      [prodId]
+    );
+    if (existing.length === 0) {
+      return res.status(404).json({ message: 'Produk tidak ditemukan.' });
+    }
+
+    await pool.query('UPDATE products SET harga = ?, updated_at = NOW() WHERE id = ?', [
+      finalHarga,
+      prodId,
+    ]);
+
+    try {
+      await pool.query(
+        `INSERT INTO activity_logs (user_id, modul, aksi, deskripsi, ip_address)
+         VALUES (?, 'FR03_MASTER_HARGA', 'UPDATE', ?, ?)`,
+        [
+          Number(updated_by) || 1,
+          `Mengubah harga produk [${existing[0].kode_barang}] ${existing[0].nama_barang} menjadi Rp ${finalHarga}`,
+          req.ip || '127.0.0.1',
+        ]
+      );
+    } catch (_) {}
+
+    const [updatedRows] = await pool.query(
+      'SELECT p.*, u.name AS creator_name FROM products p LEFT JOIN users u ON p.created_by = u.id WHERE p.id = ? LIMIT 1',
+      [prodId]
+    );
+
+    return res.json({
+      status: true,
+      message: 'Harga produk berhasil diperbarui.',
+      data: formatProductRow(updatedRows[0]),
+    });
+  } catch (error) {
+    console.error('[PATCH /api/products/:id/price] Error:', error);
+    return res.status(500).json({ message: 'Gagal memperbarui harga produk: ' + error.message });
   }
 });
 

@@ -80,8 +80,10 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
       setState(() => _isLoading = true);
       try {
         final authProvider = Provider.of<AuthProvider>(context, listen: false);
-        final salesId = authProvider.currentUser?.id;
-        final fetchedProds = await InventoryService.fetchProducts(salesId: salesId);
+        final user = authProvider.currentUser;
+        final isManager = (user?.isSuperAdmin == true || user?.isAdmin == true);
+        final salesId = isManager ? null : user?.id;
+        final fetchedProds = await InventoryService.fetchProducts(salesId: user?.id);
         final fetchedReqs = await InventoryService.fetchStockRequests(salesId: salesId);
         if (mounted) {
           setState(() {
@@ -1073,10 +1075,18 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
     });
 
     await InventoryService.saveCachedProducts(_products);
-    await InventoryService.saveCachedRequests(_requests);
+    final allReqs = await InventoryService.loadCachedRequests();
+    final idx = allReqs.indexWhere((r) => r.id == item.id);
+    if (idx != -1) {
+      allReqs[idx] = item;
+    } else {
+      allReqs.insert(0, item);
+    }
+    await InventoryService.saveCachedRequests(allReqs);
 
     if (!InventoryService.isTestEnv) {
       try {
+        await AuthService.resolveBaseUrl();
         await http
             .put(
               Uri.parse('${AuthService.activeBaseUrl}/stock-requests/${item.id}/status'),
@@ -1093,7 +1103,7 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                 'reviewer_email': currentUser?.email,
               }),
             )
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 4));
       } catch (_) {}
     }
 
@@ -1124,10 +1134,18 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
       item.diprosesOleh = reviewerDisplay;
     });
 
-    await InventoryService.saveCachedRequests(_requests);
+    final allReqs = await InventoryService.loadCachedRequests();
+    final idx = allReqs.indexWhere((r) => r.id == item.id);
+    if (idx != -1) {
+      allReqs[idx] = item;
+    } else {
+      allReqs.insert(0, item);
+    }
+    await InventoryService.saveCachedRequests(allReqs);
 
     if (!InventoryService.isTestEnv) {
       try {
+        await AuthService.resolveBaseUrl();
         await http
             .put(
               Uri.parse('${AuthService.activeBaseUrl}/stock-requests/${item.id}/status'),
@@ -1143,7 +1161,7 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                 'reviewer_email': currentUser?.email,
               }),
             )
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 4));
       } catch (_) {}
     }
 

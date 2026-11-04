@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../../constants.dart';
@@ -224,8 +224,8 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           tooltip: 'Menu',
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
-        title: const Text(
-          'Dashboard Sales',
+        title: Text(
+          'Dashboard $userRole',
           style: TextStyle(color: kTextColor, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -560,19 +560,21 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         MaterialPageRoute(builder: (context) => const FR06MonitoringPosisiScreen()),
                       ),
                     ),
-                    if (user?.isSuperAdmin != true && user?.isAdmin != true) ...[
-                      const SizedBox(width: 10),
-                      _buildQuickActionBtn(
-                        icon: Icons.add_shopping_cart,
-                        label: 'Req Barang',
-                        accentColor: rolePrimaryColor,
-                        bgColor: roleLightColor,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const FR10PengajuanBarangScreen()),
-                        ),
+                    const SizedBox(width: 10),
+                    _buildQuickActionBtn(
+                      icon: (user?.isSuperAdmin == true || user?.isAdmin == true)
+                          ? Icons.fact_check_outlined
+                          : Icons.add_shopping_cart,
+                      label: (user?.isSuperAdmin == true || user?.isAdmin == true)
+                          ? 'Terima Barang'
+                          : 'Req Barang',
+                      accentColor: rolePrimaryColor,
+                      bgColor: roleLightColor,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const FR10PengajuanBarangScreen()),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
@@ -613,9 +615,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '• Pastikan selalu mencatat absensi dan update titik rute kunjungan toko harian.\n'
-                      '• Menu lengkap seluruh fitur aplikasi dapat diakses kapan saja melalui Sidebar Menu.\n'
-                      '• Untuk bantuan teknis hubungi bagian Administrator.',
+                      'â€¢ Pastikan selalu mencatat absensi dan update titik rute kunjungan toko harian.\n'
+                      'â€¢ Menu lengkap seluruh fitur aplikasi dapat diakses kapan saja melalui Sidebar Menu.\n'
+                      'â€¢ Untuk bantuan teknis hubungi bagian Administrator.',
                       style: TextStyle(fontSize: 12, color: kSecondaryColor, height: 1.5),
                     ),
                   ],

@@ -18,6 +18,7 @@ function formatApproverDisplay(name, role) {
 }
 
 function formatStockRequestRow(row) {
+  if (!row) return null;
   const createdYear = row.created_at ? new Date(row.created_at).getFullYear() : 2026;
   const kodePengajuan = `REQ-${createdYear}-${String(row.id).padStart(3, '0')}`;
 
@@ -81,7 +82,7 @@ const BASE_SELECT_QUERY = `
          a.name AS approver_name,
          a.role AS approver_role
   FROM stock_requests sr
-  JOIN users u ON sr.sales_id = u.id
+  LEFT JOIN users u ON sr.sales_id = u.id
   LEFT JOIN products p ON sr.product_id = p.id
   LEFT JOIN users a ON sr.approved_by = a.id
 `;
@@ -151,14 +152,19 @@ router.post('/', async (req, res) => {
       alasan,
     } = req.body;
 
-    if (!alasan || String(alasan).trim() === '') {
-      return res.status(400).json({ message: 'Alasan pengajuan barang wajib diisi.' });
-    }
-
-    const qty = Math.max(1, Number(qty_diajukan) || 1);
     const validJenis = ['tambah', 'kurang', 'retur'].includes(String(jenis || '').toLowerCase())
       ? String(jenis).toLowerCase()
       : 'tambah';
+
+    const finalAlasan = (alasan && String(alasan).trim() !== '')
+      ? String(alasan).trim()
+      : (validJenis === 'retur' ? '' : 'Pengajuan Tambah Stok');
+
+    if (validJenis === 'retur' && !finalAlasan) {
+      return res.status(400).json({ message: 'Alasan retur barang wajib diisi.' });
+    }
+
+    const qty = Math.max(1, Number(qty_diajukan) || 1);
 
     // Cari user sales
     let salesUser = null;
@@ -217,7 +223,7 @@ router.post('/', async (req, res) => {
         finalFotoCustom,
         validJenis,
         qty,
-        String(alasan).trim(),
+        finalAlasan,
       ]
     );
 

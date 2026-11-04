@@ -6,11 +6,13 @@ import 'package:shop_app/main.dart';
 import 'package:shop_app/providers/auth_provider.dart';
 import 'package:shop_app/routes.dart';
 import 'package:shop_app/screens/tracking_sales/fr02_master_barang_screen.dart';
+import 'package:shop_app/screens/tracking_sales/fr03_master_harga_screen.dart';
 import 'package:shop_app/screens/tracking_sales/fr09_pengajuan_izin_screen.dart';
 import 'package:shop_app/screens/tracking_sales/fr10_pengajuan_barang_screen.dart';
 import 'package:shop_app/screens/tracking_sales/fr11_profil_screen.dart';
 import 'package:shop_app/screens/tracking_sales/fr12_register_screen.dart';
 import 'package:shop_app/screens/tracking_sales/home_dashboard_screen.dart';
+import 'package:shop_app/services/inventory_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -48,6 +50,30 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('Login screen submits and navigates to dashboard on Enter key press',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ],
+        child: const MyApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final emailFinder = find.byType(TextFormField).at(0);
+    final passwordFinder = find.byType(TextFormField).at(1);
+
+    await tester.enterText(emailFinder, 'owner@majubersama.com');
+    await tester.enterText(passwordFinder, 'password123');
+    await tester.showKeyboard(passwordFinder);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(find.byType(HomeDashboardScreen), findsOneWidget);
   });
 
   testWidgets('Dashboard blocks unauthenticated user and displays restricted access',
@@ -195,6 +221,7 @@ void main() {
     await tester.runAsync(() async {
       await adminProvider.login('admin@majubersama.com', 'password123');
     });
+    await InventoryService.saveCachedRequests([]);
 
     await tester.pumpWidget(
       MultiProvider(
@@ -261,8 +288,9 @@ void main() {
     expect(find.descendant(of: drawerFinder, matching: find.text('Data Barang')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Daftar Harga')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Jadwal Rute')), findsOneWidget);
-    // Menu Pengajuan Barang tidak ditampilkan untuk role Owner & Admin
+    // Menu Pengajuan Barang tampil sebagai Penerimaan Pengajuan Barang untuk role Owner & Admin
     expect(find.descendant(of: drawerFinder, matching: find.text('Pengajuan Barang (Req)')), findsNothing);
+    expect(find.descendant(of: drawerFinder, matching: find.text('Penerimaan Pengajuan Barang')), findsOneWidget);
 
     expect(find.descendant(of: drawerFinder, matching: find.text('OPERASIONAL SALES')), findsOneWidget);
     expect(find.descendant(of: drawerFinder, matching: find.text('Pendapatan Sales')), findsOneWidget);
@@ -288,7 +316,7 @@ void main() {
     // Tekan tombol Back di AppBar -> langsung kembali ke Dashboard Sales dalam sekali klik
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
-    expect(find.text('Dashboard Sales'), findsOneWidget);
+    expect(find.byType(HomeDashboardScreen), findsOneWidget);
   });
 
   testWidgets('Sidebar menu can also be opened via Quick Action button on Dashboard',
@@ -402,6 +430,23 @@ void main() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
+    addTearDown(() async {
+      await InventoryService.clearCache();
+    });
+
+    // Siapkan data barang pengujian dan pastikan dihapus setelah pengujian selesai
+    final testProduct = ProductItem(
+      id: 1,
+      kodeBarang: 'BRG-001',
+      namaBarang: 'Plastik Kresek 1kg',
+      kategori: 'Plastik',
+      satuan: 'Pack',
+      stokGudang: 120,
+      stokSales: 15,
+      fotoUrl: 'preset:plastik',
+    );
+    await InventoryService.saveCachedProducts([testProduct]);
+    await InventoryService.saveCachedRequests([]);
 
     final salesProvider = AuthProvider();
     await tester.runAsync(() async {
@@ -435,17 +480,24 @@ void main() {
 
     expect(find.text('Ajukan Pengajuan Barang'), findsOneWidget);
 
+    // Verifikasi pilihan Kurang Stok dihilangkan
+    expect(find.text('Kurang Stok'), findsNothing);
+    expect(find.text('Tambah Stok'), findsOneWidget);
+    expect(find.text('Retur Barang'), findsOneWidget);
+
+    // Verifikasi field alasan hanya muncul pada Retur Barang
+    expect(find.text('Alasan Retur '), findsNothing);
+    await tester.tap(find.text('Retur Barang'));
+    await tester.pumpAndSettle();
+    expect(find.text('Alasan Retur '), findsOneWidget);
+
+    await tester.tap(find.text('Tambah Stok'));
+    await tester.pumpAndSettle();
+    expect(find.text('Alasan Retur '), findsNothing);
+
     await tester.enterText(
       find.byType(TextFormField).at(0),
-      'Plastik Kresek 1kg',
-    );
-    await tester.enterText(
-      find.byType(TextFormField).at(1),
       '5',
-    );
-    await tester.enterText(
-      find.byType(TextFormField).at(2),
-      'Stok plastik di toko hampir habis, mohon untuk ditambahkan.',
     );
     await tester.tap(find.text('Kirim Pengajuan'));
     await tester.pumpAndSettle();
@@ -463,11 +515,15 @@ void main() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
+    addTearDown(() async {
+      await InventoryService.clearCache();
+    });
 
     final adminProvider = AuthProvider();
     await tester.runAsync(() async {
       await adminProvider.login('admin@majubersama.com', 'password123');
     });
+    await InventoryService.saveCachedRequests([]);
 
     // 1. Uji Manajemen Produk (FR02) untuk Admin / Owner & Sales
     await tester.pumpWidget(
@@ -536,7 +592,6 @@ void main() {
     await tester.tap(find.text('Ajukan Barang'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextFormField).at(0), '5');
-    await tester.enterText(find.byType(TextFormField).at(1), 'Kebutuhan stok kanvas sales');
     await tester.tap(find.text('Kirim Pengajuan'));
     await tester.pumpAndSettle();
 
@@ -558,5 +613,173 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Setujui & Tambah Stok'), findsNothing);
+  });
+
+  testWidgets('FR10 Admin and Owner can view Penerimaan Pengajuan Barang, verify metrics, and accept or reject requests',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    addTearDown(() async {
+      await InventoryService.clearCache();
+    });
+
+    final adminProvider = AuthProvider();
+    await tester.runAsync(() async {
+      await adminProvider.login('admin@majubersama.com', 'password123');
+    });
+    await InventoryService.saveCachedRequests([]);
+
+    // 1. Simpan dummy data barang & permintaan stok dari sales untuk verifikasi Admin/Owner
+    final dummyProduct = ProductItem(
+      id: 1,
+      kodeBarang: 'BRG-001',
+      namaBarang: 'Plastik Kresek 1kg',
+      kategori: 'Plastik',
+      satuan: 'Pack',
+      stokGudang: 120,
+      stokSales: 15,
+      fotoUrl: 'preset:plastik',
+    );
+    final dummyReq = StockRequestItem(
+      id: 99,
+      kodePengajuan: 'REQ-2026-099',
+      salesId: 3,
+      salesName: 'Budi Santoso',
+      salesEmail: 'sales@majubersama.com',
+      productId: 1,
+      kodeBarang: 'BRG-001',
+      namaBarang: 'Plastik Kresek 1kg',
+      kategori: 'Plastik',
+      satuan: 'Pack',
+      stokGudang: 120,
+      stokSales: 15,
+      jenis: JenisPengajuanStok.tambah,
+      qtyDiajukan: 10,
+      alasan: 'Pengajuan Tambah Stok',
+      tanggalPengajuan: '3 Nov 2026',
+      status: StatusPengajuanStok.menunggu,
+    );
+    await InventoryService.saveCachedProducts([dummyProduct]);
+    await InventoryService.saveCachedRequests([dummyReq]);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: adminProvider),
+        ],
+        child: const MaterialApp(
+          home: FR10PengajuanBarangScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 2. Verifikasi UI Admin/Owner: Judul Penerimaan Pengajuan Barang, profil admin, kartu statistik
+    expect(find.text('Penerimaan Pengajuan Barang'), findsWidgets);
+    expect(find.text('Profil Admin'), findsOneWidget);
+    expect(find.text('Total Masuk'), findsOneWidget);
+    expect(find.text('Menunggu'), findsWidgets);
+    expect(find.text('Diterima'), findsOneWidget);
+    expect(find.text('Ajukan Barang'), findsNothing); // Tombol ajukan barang tidak muncul untuk Admin/Owner
+
+    // 3. Verifikasi tombol Terima & Tolak muncul di baris tabel untuk Admin
+    expect(find.text('Terima'), findsOneWidget);
+    expect(find.text('Tolak'), findsOneWidget);
+
+    // 4. Klik tombol "Terima", modal verifikasi muncul
+    await tester.tap(find.text('Terima'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Penerimaan & Verifikasi Pengajuan Barang'), findsOneWidget);
+    expect(find.text('Terima & Update Stok'), findsOneWidget);
+
+    // 5. Admin menerima pengajuan
+    await tester.tap(find.text('Terima & Update Stok'));
+    await tester.pumpAndSettle();
+
+    // Status berubah menjadi Disetujui
+    expect(find.text('Disetujui'), findsWidgets);
+    expect(find.text('Terima'), findsNothing);
+  });
+
+  testWidgets('FR03 Admin and Owner can view Master Harga, verify metric cards, and update product prices',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 1400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    addTearDown(() async {
+      await InventoryService.clearCache();
+    });
+
+    final adminProvider = AuthProvider();
+    await tester.runAsync(() async {
+      await adminProvider.login('admin@majubersama.com', 'password123');
+    });
+
+    final testProduct = ProductItem(
+      id: 1,
+      kodeBarang: 'BRG-001',
+      namaBarang: 'Plastik Kresek 1kg',
+      kategori: 'Plastik',
+      satuan: 'Pack',
+      stokGudang: 120,
+      stokSales: 15,
+      harga: 15000,
+      fotoUrl: 'preset:plastik',
+    );
+    await InventoryService.saveCachedProducts([testProduct]);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: adminProvider),
+        ],
+        child: const MaterialApp(
+          home: FR03MasterHargaScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verifikasi UI Header, Profil Banner, dan Summary Stat Cards
+    expect(find.text('Master & Penetapan Harga Barang'), findsOneWidget);
+    expect(find.text('Profil Admin'), findsOneWidget);
+    expect(find.text('Total Produk'), findsOneWidget);
+    expect(find.text('Rata-Rata Harga'), findsOneWidget);
+    expect(find.text('Harga Tertinggi'), findsOneWidget);
+    expect(find.text('Harga Terendah'), findsOneWidget);
+    expect(find.text('Daftar & Pengaturan Harga Jual'), findsOneWidget);
+
+    // 2. Verifikasi produk dan harga tampil di tabel
+    expect(find.text('Plastik Kresek 1kg'), findsWidgets);
+    expect(find.text('Rp 15.000'), findsWidgets);
+    expect(find.text('Ubah'), findsOneWidget);
+
+    // 3. Klik tombol Ubah untuk membuka dialog modal pengaturan harga
+    await tester.tap(find.text('Ubah'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ubah Harga Barang'), findsOneWidget);
+    expect(find.text('Harga Jual Saat Ini:'), findsOneWidget);
+    expect(find.text('+10%'), findsOneWidget);
+
+    // 4. Klik chip +10% untuk kalkulasi otomatis markup
+    await tester.tap(find.text('+10%'));
+    await tester.pumpAndSettle();
+
+    // 5. Simpan harga baru
+    await tester.tap(find.text('Simpan Harga'));
+    await tester.pumpAndSettle();
+
+    // Dialog tertutup dan harga diperbarui
+    expect(find.text('Ubah Harga Barang'), findsNothing);
+    expect(find.text('Rp 16.500'), findsWidgets);
   });
 }

@@ -29,16 +29,10 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
   // State Form "Ajukan Pengajuan Barang" (Tampil melalui Pop-up Modal)
   final _formKey = GlobalKey<FormState>();
   final _dialogFormKey = GlobalKey<FormState>();
-  bool _isCustomNewProduct = false;
   int? _selectedProductId;
   JenisPengajuanStok _selectedJenis = JenisPengajuanStok.tambah;
   final TextEditingController _qtyCtrl = TextEditingController();
   final TextEditingController _alasanCtrl = TextEditingController();
-
-  // Field tambahan jika Sales mengajukan barang baru yang belum ada di katalog
-  final TextEditingController _namaBarangBaruCtrl = TextEditingController();
-  String _kategoriBaru = 'Plastik';
-  String _satuanBaru = 'Pack';
 
   @override
   void initState() {
@@ -50,21 +44,17 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
   void dispose() {
     _qtyCtrl.dispose();
     _alasanCtrl.dispose();
-    _namaBarangBaruCtrl.dispose();
     super.dispose();
   }
 
   ProductItem get _currentSelectedProduct {
-    if (_isCustomNewProduct || _products.isEmpty) {
-      final customName = _namaBarangBaruCtrl.text.trim().isNotEmpty
-          ? _namaBarangBaruCtrl.text.trim()
-          : 'Belum ada barang dipilih';
+    if (_products.isEmpty) {
       return ProductItem(
         id: 0,
-        kodeBarang: 'BRG-BARU',
-        namaBarang: customName,
-        kategori: _kategoriBaru,
-        satuan: _satuanBaru,
+        kodeBarang: '-',
+        namaBarang: 'Belum ada barang dipilih',
+        kategori: 'Plastik',
+        satuan: 'Pack',
         stokGudang: 0,
         stokSales: 0,
         fotoUrl: 'preset:plastik',
@@ -77,12 +67,21 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
   }
 
   Future<void> _loadAllData() async {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    final user = authProvider.currentUser;
+    final isManager = (user?.isSuperAdmin == true || user?.isAdmin == true);
+    final salesId = isManager ? null : user?.id;
+
     final cachedProds = await InventoryService.loadCachedProducts();
     final cachedReqs = await InventoryService.loadCachedRequests();
+    final initialFilteredReqs = isManager
+        ? cachedReqs
+        : (salesId != null ? cachedReqs.where((r) => r.salesId == salesId).toList() : cachedReqs);
+
     if (mounted) {
       setState(() {
         _products = cachedProds;
-        _requests = cachedReqs;
+        _requests = initialFilteredReqs;
         if (_products.isNotEmpty && !_products.any((p) => p.id == _selectedProductId)) {
           _selectedProductId = _products.first.id;
         }
@@ -94,9 +93,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final salesId = authProvider.currentUser?.id;
-      final fetchedProds = await InventoryService.fetchProducts(salesId: salesId);
+      final fetchedProds = await InventoryService.fetchProducts(salesId: user?.id);
       final fetchedReqs = await InventoryService.fetchStockRequests(salesId: salesId);
       if (mounted) {
         setState(() {
@@ -128,11 +125,11 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     final salesName = (user?.name.isNotEmpty == true) ? user!.name : 'Sales';
     final salesEmail = (user?.email.isNotEmpty == true) ? user!.email : '';
 
-    final isNewProd = _isCustomNewProduct || _products.isEmpty;
-    if (isNewProd && _namaBarangBaruCtrl.text.trim().isEmpty) {
+    final selectedProd = _currentSelectedProduct;
+    if (_products.isEmpty || selectedProd.id == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Nama barang wajib diisi terlebih dahulu.'),
+          content: Text('Silakan pilih barang yang ditambahkan oleh Owner/Admin.'),
           backgroundColor: kDangerColor,
         ),
       );
@@ -150,18 +147,22 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       return;
     }
 
-    final alasanText = _alasanCtrl.text.trim();
-    if (alasanText.isEmpty) {
+    // Alasan hanya wajib dan divalidasi pada retur barang
+    final String alasanText = _selectedJenis == JenisPengajuanStok.retur
+        ? _alasanCtrl.text.trim()
+        : (_alasanCtrl.text.trim().isNotEmpty
+            ? _alasanCtrl.text.trim()
+            : 'Pengajuan Tambah Stok');
+
+    if (_selectedJenis == JenisPengajuanStok.retur && alasanText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Alasan pengajuan wajib diisi.'),
+          content: Text('Alasan pengajuan retur barang wajib diisi.'),
           backgroundColor: kDangerColor,
         ),
       );
       return;
     }
-
-    final selectedProd = _currentSelectedProduct;
 
     setState(() => _isSubmitting = true);
 
@@ -181,7 +182,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       'Des'
     ];
     final formattedDate = '${now.day} ${months[now.month - 1]} ${now.year}';
-    final nextId = (_requests.isEmpty ? 1 : _requests.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1);
+    final allReqs = await InventoryService.loadCachedRequests();
+    final nextId = (allReqs.isEmpty ? 1 : allReqs.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1);
 
     StockRequestItem newReq = StockRequestItem(
       id: nextId,
@@ -189,10 +191,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       salesId: salesId,
       salesName: salesName,
       salesEmail: salesEmail,
-      productId: isNewProd ? null : selectedProd.id,
-      kodeBarang: isNewProd
-          ? 'BRG-${nextId.toString().padLeft(3, '0')}'
-          : selectedProd.kodeBarang,
+      productId: selectedProd.id,
+      kodeBarang: selectedProd.kodeBarang,
       namaBarang: selectedProd.namaBarang,
       kategori: selectedProd.kategori,
       satuan: selectedProd.satuan,
@@ -206,8 +206,49 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       status: StatusPengajuanStok.menunggu,
     );
 
+    // 1. Simpan segera ke cache statis & memory lokal agar instan terlihat bagi Sales, Admin, dan Owner
+    allReqs.removeWhere((r) => r.id == newReq.id);
+    allReqs.insert(0, newReq);
+    await InventoryService.saveCachedRequests(allReqs);
+
+    if (mounted) {
+      setState(() {
+        _requests.removeWhere((r) => r.id == newReq.id);
+        _requests.insert(0, newReq);
+        _isSubmitting = false;
+        _qtyCtrl.clear();
+        _alasanCtrl.clear();
+      });
+    }
+
+    if (closeDialogOnSuccess && mounted && Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Pengajuan ${newReq.jenisFullLabel} "${newReq.namaBarang}" (${newReq.qtyDiajukan} ${newReq.satuan}) berhasil dikirim dan menunggu persetujuan Admin/Owner!',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF1D4ED8),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+
+    // 2. Sinkronkan ke Backend MySQL secara asinkron tanpa memblokir interaksi pengguna
     if (!InventoryService.isTestEnv) {
       try {
+        await AuthService.resolveBaseUrl();
         final response = await http
             .post(
               Uri.parse('${AuthService.activeBaseUrl}/stock-requests'),
@@ -218,8 +259,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               body: jsonEncode({
                 'sales_id': salesId,
                 'sales_email': salesEmail,
-                'product_id': isNewProd ? null : selectedProd.id,
-                'kode_barang_custom': newReq.kodeBarang,
+                'product_id': selectedProd.id,
+                'kode_barang_custom': selectedProd.kodeBarang,
                 'nama_barang_custom': selectedProd.namaBarang,
                 'kategori_custom': selectedProd.kategori,
                 'satuan_custom': selectedProd.satuan,
@@ -229,53 +270,32 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 'alasan': alasanText,
               }),
             )
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 4));
 
         if (response.statusCode == 201 || response.statusCode == 200) {
           final body = jsonDecode(response.body);
           if (body['data'] != null) {
-            newReq = StockRequestItem.fromJson(Map<String, dynamic>.from(body['data']));
+            final serverReq = StockRequestItem.fromJson(Map<String, dynamic>.from(body['data']));
+            final currentReqs = await InventoryService.loadCachedRequests();
+            final sIdx = currentReqs.indexWhere((r) => r.id == newReq.id || r.kodePengajuan == newReq.kodePengajuan);
+            if (sIdx != -1) {
+              currentReqs[sIdx] = serverReq;
+            } else {
+              currentReqs.insert(0, serverReq);
+            }
+            await InventoryService.saveCachedRequests(currentReqs);
+            if (mounted) {
+              setState(() {
+                final localIdx = _requests.indexWhere((r) => r.id == newReq.id || r.kodePengajuan == newReq.kodePengajuan);
+                if (localIdx != -1) {
+                  _requests[localIdx] = serverReq;
+                }
+              });
+            }
           }
         }
       } catch (_) {}
     }
-
-    if (!mounted) return;
-    setState(() {
-      _requests.insert(0, newReq);
-      _isSubmitting = false;
-      _qtyCtrl.clear();
-      _alasanCtrl.clear();
-      if (_isCustomNewProduct || _products.isEmpty) {
-        _namaBarangBaruCtrl.clear();
-        _isCustomNewProduct = false;
-      }
-    });
-
-    await InventoryService.saveCachedRequests(_requests);
-
-    if (closeDialogOnSuccess && mounted && Navigator.canPop(context)) {
-      Navigator.pop(context);
-    }
-
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'Pengajuan ${newReq.jenisFullLabel} "${newReq.namaBarang}" (${newReq.qtyDiajukan} ${newReq.satuan}) berhasil dikirim dan menunggu persetujuan Admin/Owner!',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF1D4ED8),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
   }
 
   // ============================================================
@@ -359,11 +379,19 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     });
 
     await InventoryService.saveCachedProducts(_products);
-    await InventoryService.saveCachedRequests(_requests);
+    final allReqs = await InventoryService.loadCachedRequests();
+    final idx = allReqs.indexWhere((r) => r.id == item.id);
+    if (idx != -1) {
+      allReqs[idx] = item;
+    } else {
+      allReqs.insert(0, item);
+    }
+    await InventoryService.saveCachedRequests(allReqs);
 
     // 2. Sinkronkan ke Backend MySQL
     if (!InventoryService.isTestEnv) {
       try {
+        await AuthService.resolveBaseUrl();
         final response = await http
             .put(
               Uri.parse('${AuthService.activeBaseUrl}/stock-requests/${item.id}/status'),
@@ -380,7 +408,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 'reviewer_email': currentUser?.email,
               }),
             )
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 4));
 
         if (response.statusCode == 200) {
           await _loadAllData();
@@ -426,10 +454,18 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       item.diprosesOleh = reviewerDisplay;
     });
 
-    await InventoryService.saveCachedRequests(_requests);
+    final allReqs = await InventoryService.loadCachedRequests();
+    final idx = allReqs.indexWhere((r) => r.id == item.id);
+    if (idx != -1) {
+      allReqs[idx] = item;
+    } else {
+      allReqs.insert(0, item);
+    }
+    await InventoryService.saveCachedRequests(allReqs);
 
     if (!InventoryService.isTestEnv) {
       try {
+        await AuthService.resolveBaseUrl();
         await http
             .put(
               Uri.parse('${AuthService.activeBaseUrl}/stock-requests/${item.id}/status'),
@@ -444,7 +480,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 'reviewer_email': currentUser?.email,
               }),
             )
-            .timeout(const Duration(seconds: 6));
+            .timeout(const Duration(seconds: 4));
       } catch (_) {}
     }
 
@@ -470,13 +506,16 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     setState(() {
       _requests.removeWhere((r) => r.id == item.id);
     });
-    await InventoryService.saveCachedRequests(_requests);
+    final allReqs = await InventoryService.loadCachedRequests();
+    allReqs.removeWhere((r) => r.id == item.id);
+    await InventoryService.saveCachedRequests(allReqs);
 
     if (!InventoryService.isTestEnv) {
       try {
+        await AuthService.resolveBaseUrl();
         await http
             .delete(Uri.parse('${AuthService.activeBaseUrl}/stock-requests/${item.id}'))
-            .timeout(const Duration(seconds: 5));
+            .timeout(const Duration(seconds: 4));
       } catch (_) {}
     }
 
@@ -507,11 +546,14 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
         titlePadding: const EdgeInsets.fromLTRB(20, 18, 12, 0),
         title: Row(
           children: [
-            const Icon(Icons.inventory_2_rounded, color: Color(0xFF1D4ED8)),
+            Icon(
+              isManager ? Icons.fact_check_rounded : Icons.inventory_2_rounded,
+              color: const Color(0xFF1D4ED8),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                isManager ? 'Verifikasi & Tambah Stok Sales' : 'Detail Pengajuan Barang',
+                isManager ? 'Penerimaan & Verifikasi Pengajuan Barang' : 'Detail Pengajuan Barang',
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
@@ -574,7 +616,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Kode: ${item.kodeBarang} • Pengaju: ${item.salesName}',
+                              'Kode: ${item.kodeBarang} â€¢ Pengaju: ${item.salesName}',
                               style: const TextStyle(fontSize: 12, color: kSecondaryColor),
                             ),
                           ],
@@ -809,9 +851,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 );
               },
               icon: const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
-              label: const Text(
-                'Setujui & Update Stok',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              label: Text(
+                isManager ? 'Terima & Update Stok' : 'Setujui & Update Stok',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -859,6 +901,15 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
   // DIALOG MODAL "+ AJUKAN PENGAJUAN" (UNTUK TAMPILAN MOBILE/MODAL)
   // ============================================================
   void _openAjukanPengajuanModal() {
+    setState(() {
+      _selectedJenis = JenisPengajuanStok.tambah;
+      _qtyCtrl.clear();
+      _alasanCtrl.clear();
+      if (_products.isNotEmpty && !_products.any((p) => p.id == _selectedProductId)) {
+        _selectedProductId = _products.first.id;
+      }
+    });
+
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -906,9 +957,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
           tooltip: 'Kembali ke Dashboard',
           onPressed: _backToDashboard,
         ),
-        title: const Text(
-          'Pengajuan Barang Sales',
-          style: TextStyle(
+        title: Text(
+          isManager ? 'Penerimaan Pengajuan Barang' : 'Pengajuan Barang Sales',
+          style: const TextStyle(
             color: kTextColor,
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -951,10 +1002,142 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
             children: [
               _buildSalesProfileBanner(user, isManager),
               const SizedBox(height: 14),
+              if (isManager) ...[
+                _buildManagerStatsCards(user),
+                const SizedBox(height: 14),
+              ],
               _buildPengajuanTableCard(filteredRequests, isManager),
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildManagerStatsCards(UserModel? user) {
+    final total = _requests.length;
+    final pending = _requests.where((r) => r.status == StatusPengajuanStok.menunggu).length;
+    final approved = _requests.where((r) => r.status == StatusPengajuanStok.disetujui).length;
+    final rejected = _requests.where((r) => r.status == StatusPengajuanStok.ditolak).length;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 640;
+        final cards = [
+          _buildStatCard(
+            title: 'Total Masuk',
+            count: '$total',
+            icon: Icons.all_inbox_rounded,
+            color: const Color(0xFF1D4ED8),
+            bgColor: const Color(0xFFEFF6FF),
+          ),
+          _buildStatCard(
+            title: 'Menunggu',
+            count: '$pending',
+            icon: Icons.hourglass_top_rounded,
+            color: const Color(0xFFD97706),
+            bgColor: const Color(0xFFFFFBEB),
+          ),
+          _buildStatCard(
+            title: 'Diterima',
+            count: '$approved',
+            icon: Icons.check_circle_rounded,
+            color: const Color(0xFF15803D),
+            bgColor: const Color(0xFFDCFCE7),
+          ),
+          _buildStatCard(
+            title: 'Ditolak',
+            count: '$rejected',
+            icon: Icons.cancel_rounded,
+            color: const Color(0xFFDC2626),
+            bgColor: const Color(0xFFFEE2E2),
+          ),
+        ];
+
+        if (isNarrow) {
+          return GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 2.1,
+            children: cards,
+          );
+        }
+
+        return Row(
+          children: cards
+              .map((c) => Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: c,
+                    ),
+                  ))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatCard({
+    required String title,
+    required String count,
+    required IconData icon,
+    required Color color,
+    required Color bgColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: bgColor,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  count,
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: color,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1319,16 +1502,16 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
-                          Icons.inventory_2_outlined,
+                          isManager ? Icons.fact_check_outlined : Icons.inventory_2_outlined,
                           color: roleColor,
                           size: 24,
                         ),
                       ),
                       const SizedBox(width: 12),
-                      const Flexible(
+                      Flexible(
                         child: Text(
-                          'Pengajuan Stok',
-                          style: TextStyle(
+                          isManager ? 'Penerimaan Pengajuan Barang' : 'Pengajuan Stok',
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF0F172A),
@@ -1408,9 +1591,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      SizedBox(
+                      const SizedBox(
                         width: 28,
                         child: Text(
                           'No',
@@ -1421,7 +1604,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         flex: 3,
                         child: Text(
                           'Tanggal Pengajuan',
@@ -1432,7 +1615,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         flex: 4,
                         child: Text(
                           'Barang',
@@ -1443,7 +1626,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         flex: 2,
                         child: Text(
                           'Jenis',
@@ -1454,7 +1637,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         flex: 2,
                         child: Text(
                           'Jumlah',
@@ -1465,7 +1648,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         flex: 3,
                         child: Text(
                           'Status',
@@ -1477,8 +1660,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                         ),
                       ),
                       SizedBox(
-                        width: 112,
-                        child: Text(
+                        width: isManager ? 175 : 112,
+                        child: const Text(
                           'Aksi',
                           textAlign: TextAlign.center,
                           style: TextStyle(
@@ -1561,7 +1744,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   border: Border.all(color: const Color(0xFFCBD5E1)),
                 ),
                 child: Text(
-                  '#$rowNum • ${item.tanggalPengajuan}',
+                  '#$rowNum â€¢ ${item.tanggalPengajuan}',
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -1668,7 +1851,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     const SizedBox(height: 2),
                     Text(
                       isManager
-                          ? '${item.kategori} • Oleh: ${item.salesName}'
+                          ? '${item.kategori} â€¢ Oleh: ${item.salesName}'
                           : 'Kategori: ${item.kategori}',
                       style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
                     ),
@@ -1752,10 +1935,10 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
-                    onPressed: () => _approveRequestByManager(item),
-                    icon: const Icon(Icons.check, size: 15, color: Colors.white),
+                    onPressed: () => _showDetailAndActionDialog(item, isManager: isManager),
+                    icon: const Icon(Icons.check_circle_outline, size: 15, color: Colors.white),
                     label: const Text(
-                      'Setujui & Tambah Stok',
+                      'Terima',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.bold,
@@ -1896,37 +2079,78 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 ),
               ),
 
-              // Aksi (Lihat + Menu 3 Titik)
+              // Aksi (Terima, Tolak, Lihat / Verifikasi)
               SizedBox(
-                width: 112,
+                width: isManager ? 210 : 112,
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerRight,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      SizedBox(
-                        height: 30,
-                        child: OutlinedButton(
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF1D4ED8),
-                            side: const BorderSide(color: Color(0xFF93C5FD)),
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
+                      if (isManager && item.status == StatusPengajuanStok.menunggu) ...[
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF15803D),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          onPressed: () =>
-                              _showDetailAndActionDialog(item, isManager: isManager),
+                          onPressed: () => _showDetailAndActionDialog(item, isManager: isManager),
+                          icon: const Icon(Icons.check_circle_outline, size: 14, color: Colors.white),
+                          label: const Text(
+                            'Terima',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFDC2626),
+                            side: const BorderSide(color: Color(0xFFFCA5A5)),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          onPressed: () => _rejectRequestByManager(item, 'Ditolak oleh manajemen.'),
                           child: const Text(
-                            'Lihat',
+                            'Tolak',
                             style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 2),
+                        const SizedBox(width: 6),
+                      ] else ...[
+                        SizedBox(
+                          height: 30,
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF1D4ED8),
+                              side: const BorderSide(color: Color(0xFF93C5FD)),
+                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              minimumSize: Size.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: () =>
+                                _showDetailAndActionDialog(item, isManager: isManager),
+                            child: Text(
+                              isManager ? 'Verifikasi' : 'Lihat',
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                      ],
                       SizedBox(
                         width: 28,
                         height: 28,
@@ -2002,8 +2226,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
             ],
           ),
 
-          // Baris Cepat Approve / Reject khusus Admin & Owner jika status masih Menunggu
-          if (isManager && item.status == StatusPengajuanStok.menunggu) ...[
+          // Info Catatan / Alasan jika tersedia
+          if (item.alasan.isNotEmpty) ...[
             const SizedBox(height: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -2022,44 +2246,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFFDC2626),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    onPressed: () => _rejectRequestByManager(
-                      item,
-                      'Pengajuan stok ditolak oleh Admin/Owner.',
-                    ),
-                    icon: const Icon(Icons.close, size: 15),
-                    label: const Text(
-                      'Tolak',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF15803D),
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                    onPressed: () => _approveRequestByManager(item),
-                    icon: const Icon(Icons.check, size: 15, color: Colors.white),
-                    label: const Text(
-                      'Setujui & Tambah Stok',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
                     ),
                   ),
                 ],
@@ -2254,188 +2440,91 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
             const Divider(height: 1, color: Color(0xFFE2E8F0)),
             const SizedBox(height: 16),
 
-            // Label Pilih Barang * + Toggle Ajukan Barang Baru / Tambah Barang
-            Wrap(
-              alignment: WrapAlignment.spaceBetween,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 8,
-              runSpacing: 4,
+            // Label Pilih Barang *
+            const Row(
               children: [
-                const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      'Pilih Barang ',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF1E293B),
-                      ),
-                    ),
-                    Text('*', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                if (_products.isNotEmpty)
-                  TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF1D4ED8),
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      minimumSize: Size.zero,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    onPressed: () {
-                      setState(() => _isCustomNewProduct = !_isCustomNewProduct);
-                      onDialogStateChanged?.call();
-                    },
-                    icon: Icon(
-                      _isCustomNewProduct ? Icons.list_alt : Icons.edit_note_rounded,
-                      size: 14,
-                    ),
-                    label: Text(
-                      _isCustomNewProduct ? 'Pilih Katalog' : 'Input Manual',
-                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
-                    ),
+                Text(
+                  'Pilih Barang ',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1E293B),
                   ),
+                ),
+                Text('*', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 8),
 
-            if (!_isCustomNewProduct && _products.isNotEmpty)
-              DropdownButtonFormField<int>(
-                key: ValueKey('prod_$_selectedProductId'),
-                initialValue: _products.any((p) => p.id == _selectedProductId)
-                    ? _selectedProductId
-                    : (_products.isNotEmpty ? _products.first.id : null),
-                isExpanded: true,
-                decoration: InputDecoration(
-                  filled: true,
-                  fillColor: const Color(0xFFF8FAFC),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                  ),
+            // Dropdown ambil data barang yang sudah ditambah oleh owner/admin
+            DropdownButtonFormField<int>(
+              key: ValueKey('prod_$_selectedProductId'),
+              initialValue: _products.any((p) => p.id == _selectedProductId)
+                  ? _selectedProductId
+                  : (_products.isNotEmpty ? _products.first.id : null),
+              isExpanded: true,
+              hint: const Text(
+                'Pilih barang yang tersedia...',
+                style: TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+              ),
+              decoration: InputDecoration(
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
                 ),
-                items: _products.map((prod) {
-                  return DropdownMenuItem<int>(
-                    value: prod.id,
-                    child: Row(
-                      children: [
-                        ProductThumbnailWidget(
-                          fotoUrl: prod.fotoUrl,
-                          namaBarang: prod.namaBarang,
-                          kategori: prod.kategori,
-                          size: 28,
-                          borderRadius: 6,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            '${prod.kategori} - ${prod.namaBarang}',
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-                onChanged: (val) {
-                  if (val != null) {
-                    setState(() => _selectedProductId = val);
-                    onDialogStateChanged?.call();
-                  }
-                },
-              )
-            else
-              Column(
-                children: [
-                  TextFormField(
-                    controller: _namaBarangBaruCtrl,
-                    onChanged: (_) {
-                      setState(() {});
-                      onDialogStateChanged?.call();
-                    },
-                    decoration: InputDecoration(
-                      hintText: 'Masukkan nama barang (contoh: Plastik Kresek 1kg)',
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                    validator: (v) =>
-                        ((_isCustomNewProduct || _products.isEmpty) && (v == null || v.trim().isEmpty))
-                            ? 'Nama barang wajib diisi'
-                            : null,
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                ),
+              ),
+              items: _products.map((prod) {
+                return DropdownMenuItem<int>(
+                  value: prod.id,
+                  child: Row(
                     children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey('kat_baru_$_kategoriBaru'),
-                          initialValue: _kategoriBaru,
-                          isExpanded: true,
-                          decoration: InputDecoration(
-                            labelText: 'Kategori',
-                            filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                          ),
-                          items: ['Plastik', 'Sembako', 'Minuman', 'Lainnya']
-                              .map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis)))
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() => _kategoriBaru = val);
-                              onDialogStateChanged?.call();
-                            }
-                          },
-                        ),
+                      ProductThumbnailWidget(
+                        fotoUrl: prod.fotoUrl,
+                        namaBarang: prod.namaBarang,
+                        kategori: prod.kategori,
+                        size: 28,
+                        borderRadius: 6,
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: DropdownButtonFormField<String>(
-                          key: ValueKey('sat_baru_$_satuanBaru'),
-                          initialValue: _satuanBaru,
-                          isExpanded: true,
-                          decoration: InputDecoration(
-                            labelText: 'Satuan',
-                            filled: true,
-                            fillColor: const Color(0xFFF8FAFC),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                        child: Text(
+                          '${prod.kategori} - ${prod.namaBarang}',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF0F172A),
                           ),
-                          items: ['Pack', 'Botol', 'Pcs', 'Dus', 'Bal']
-                              .map((e) => DropdownMenuItem(value: e, child: Text(e, overflow: TextOverflow.ellipsis)))
-                              .toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() => _satuanBaru = val);
-                              onDialogStateChanged?.call();
-                            }
-                          },
                         ),
                       ),
                     ],
                   ),
-                ],
-              ),
+                );
+              }).toList(),
+              validator: (v) {
+                if (v == null) {
+                  return 'Silakan pilih barang yang diajukan';
+                }
+                return null;
+              },
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() => _selectedProductId = val);
+                  onDialogStateChanged?.call();
+                }
+              },
+            ),
 
             const SizedBox(height: 16),
 
-            // Jenis Pengajuan * (Radio: Tambah Stok, Kurang Stok, Retur Barang)
+            // Jenis Pengajuan * (Pilihan kurang stok dihilangkan: hanya Tambah Stok & Retur Barang)
             const Row(
               children: [
                 Text(
@@ -2457,11 +2546,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 _buildJenisRadioOption(
                   JenisPengajuanStok.tambah,
                   'Tambah Stok',
-                  onDialogStateChanged: onDialogStateChanged,
-                ),
-                _buildJenisRadioOption(
-                  JenisPengajuanStok.kurang,
-                  'Kurang Stok',
                   onDialogStateChanged: onDialogStateChanged,
                 ),
                 _buildJenisRadioOption(
@@ -2538,44 +2622,50 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               ],
             ),
 
-            const SizedBox(height: 16),
-
-            // Alasan *
-            const Row(
-              children: [
-                Text(
-                  'Alasan ',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1E293B),
+            // Alasan * (Tampilan alasan HANYA muncul di retur barang)
+            if (_selectedJenis == JenisPengajuanStok.retur) ...[
+              const SizedBox(height: 16),
+              const Row(
+                children: [
+                  Text(
+                    'Alasan Retur ',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  Text('*', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _alasanCtrl,
+                maxLines: 3,
+                style: const TextStyle(fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Masukkan alasan retur barang (contoh: Kemasan rusak, kadaluarsa, dsb.)...',
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.all(12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
                   ),
                 ),
-                Text('*', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            TextFormField(
-              controller: _alasanCtrl,
-              maxLines: 3,
-              style: const TextStyle(fontSize: 13),
-              decoration: InputDecoration(
-                hintText: 'Stok plastik di toko hampir habis, mohon untuk ditambahkan.',
-                filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.all(12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                ),
+                validator: (v) {
+                  if (_selectedJenis == JenisPengajuanStok.retur &&
+                      (v == null || v.trim().isEmpty)) {
+                    return 'Alasan retur barang wajib diisi';
+                  }
+                  return null;
+                },
               ),
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Alasan pengajuan wajib diisi' : null,
-            ),
+            ],
 
             const SizedBox(height: 20),
 
