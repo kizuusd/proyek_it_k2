@@ -108,9 +108,9 @@ router.get('/', async (req, res) => {
   try {
     await ensureProductAndStockSchema();
     const salesId = Number(req.query.sales_id) || 3;
+    const activeOnly = req.query.active_only === '1' || req.query.active_only === 'true';
 
-    const [rows] = await pool.query(
-      `SELECT p.*,
+    let query = `SELECT p.*,
               u.name AS creator_name,
               COALESCE(
                 (SELECT si.stok_sisa
@@ -122,10 +122,13 @@ router.get('/', async (req, res) => {
               ) AS stok_sales
        FROM products p
        LEFT JOIN users u ON p.created_by = u.id
-       WHERE p.deleted_at IS NULL
-       ORDER BY p.id ASC`,
-      [salesId]
-    );
+       WHERE p.deleted_at IS NULL`;
+    if (activeOnly) {
+      query += ' AND p.is_active = 1';
+    }
+    query += ' ORDER BY p.id ASC';
+
+    const [rows] = await pool.query(query, [salesId]);
 
     return res.json({
       status: true,
@@ -290,6 +293,18 @@ router.put('/:id', async (req, res) => {
       kode_barang && String(kode_barang).trim() !== ''
         ? String(kode_barang).trim().toUpperCase()
         : existing.kode_barang;
+
+    if (finalKode !== existing.kode_barang) {
+      const [dupRows] = await pool.query(
+        'SELECT id FROM products WHERE UPPER(kode_barang) = ? AND id != ? AND deleted_at IS NULL LIMIT 1',
+        [finalKode, prodId]
+      );
+      if (dupRows.length > 0) {
+        return res.status(409).json({
+          message: `Kode barang '${finalKode}' sudah digunakan oleh produk lain.`,
+        });
+      }
+    }
     const finalNama =
       nama_barang && String(nama_barang).trim() !== ''
         ? String(nama_barang).trim()
@@ -488,39 +503,89 @@ router.delete('/:id', async (req, res) => {
 
 // --------------------------------------------------------
 // 6. PATCH /api/products/:id/price
-//    Update harga jual produk resmi oleh Admin/Owner
+//    Update harga jual produk resmi oleh Admin/Owner dengan riwayat & tanggal berlaku
 // --------------------------------------------------------
 router.patch('/:id/price', async (req, res) => {
+  const conn = await pool.getConnection();
   try {
     await ensureProductAndStockSchema();
     const prodId = Number(req.params.id);
-    const { harga, updated_by } = req.body;
-    const finalHarga = Math.max(0, Number(harga) || 0);
+    const { harga, updated_by, keterangan, started_at, ended_at } = req.body;
+    const finalHarga = Number(harga);
 
-    const [existing] = await pool.query(
+    if (!finalHarga || isNaN(finalHarga) || finalHarga <= 0) {
+      conn.release();
+      return res.status(400).json({ message: 'Harga harus berupa angka positif lebih dari 0.' });
+    }
+
+    const updaterId = Number(updated_by) || 1;
+    const [uRows] = await conn.query('SELECT id, name, role FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1', [
+      updaterId,
+    ]);
+    if (uRows.length > 0) {
+      const r = String(uRows[0].role || '').toLowerCase();
+      if (!['superadmin', 'owner', 'administrator', 'admin'].includes(r)) {
+        conn.release();
+        return res.status(403).json({
+          message: 'Akses ditolak: Hanya Admin dan Owner yang berhak mengubah harga produk.',
+        });
+      }
+    }
+
+    const [existing] = await conn.query(
       'SELECT * FROM products WHERE id = ? AND deleted_at IS NULL LIMIT 1',
       [prodId]
     );
     if (existing.length === 0) {
+      conn.release();
       return res.status(404).json({ message: 'Produk tidak ditemukan.' });
     }
+    const oldHarga = existing[0].harga != null ? Number(existing[0].harga) : 0;
+    const finalStartedAt = started_at ? new Date(started_at) : new Date();
+    const finalEndedAt = ended_at ? new Date(ended_at) : null;
+    if (finalEndedAt && finalEndedAt <= finalStartedAt) {
+      conn.release();
+      return res.status(400).json({ message: 'Tanggal berakhir harga harus setelah tanggal mulai berlaku.' });
+    }
 
-    await pool.query('UPDATE products SET harga = ?, updated_at = NOW() WHERE id = ?', [
-      finalHarga,
+    await conn.beginTransaction();
+
+    // Tutup periode harga aktif sebelumnya agar tidak tumpang tindih
+    await conn.query(
+      'UPDATE product_prices SET ended_at = ? WHERE product_id = ? AND ended_at IS NULL',
+      [finalStartedAt, prodId]
+    );
+
+    // Catat riwayat harga baru di product_prices
+    const note = keterangan && String(keterangan).trim() !== ''
+      ? String(keterangan).trim()
+      : `Perubahan harga dari Rp ${oldHarga} menjadi Rp ${finalHarga}`;
+
+    await conn.query(
+      `INSERT INTO product_prices (product_id, harga_jual, harga_beli, keterangan, started_at, ended_at, created_by, created_at)
+       VALUES (?, ?, 0, ?, ?, ?, ?, NOW())`,
+      [prodId, finalHarga, note, finalStartedAt, finalEndedAt, updaterId]
+    );
+
+    // Update harga aktif pada master produk
+    await conn.query('UPDATE products SET harga = ?, updated_at = NOW() WHERE id = ?', [
+      Math.round(finalHarga),
       prodId,
     ]);
 
     try {
-      await pool.query(
+      await conn.query(
         `INSERT INTO activity_logs (user_id, modul, aksi, deskripsi, ip_address)
          VALUES (?, 'FR03_MASTER_HARGA', 'UPDATE', ?, ?)`,
         [
-          Number(updated_by) || 1,
-          `Mengubah harga produk [${existing[0].kode_barang}] ${existing[0].nama_barang} menjadi Rp ${finalHarga}`,
+          updaterId,
+          `Mengubah harga [${existing[0].kode_barang}] ${existing[0].nama_barang}: Rp ${oldHarga} -> Rp ${finalHarga} (${note})`,
           req.ip || '127.0.0.1',
         ]
       );
     } catch (_) {}
+
+    await conn.commit();
 
     const [updatedRows] = await pool.query(
       'SELECT p.*, u.name AS creator_name FROM products p LEFT JOIN users u ON p.created_by = u.id WHERE p.id = ? LIMIT 1',
@@ -529,12 +594,55 @@ router.patch('/:id/price', async (req, res) => {
 
     return res.json({
       status: true,
-      message: 'Harga produk berhasil diperbarui.',
+      message: 'Harga produk berhasil diperbarui dan riwayat harga tercatat.',
       data: formatProductRow(updatedRows[0]),
     });
   } catch (error) {
+    try {
+      await conn.rollback();
+    } catch (_) {}
     console.error('[PATCH /api/products/:id/price] Error:', error);
     return res.status(500).json({ message: 'Gagal memperbarui harga produk: ' + error.message });
+  } finally {
+    conn.release();
+  }
+});
+
+// --------------------------------------------------------
+// 7. GET /api/products/:id/price-history
+//    Ambil riwayat perubahan harga produk dari tabel product_prices
+// --------------------------------------------------------
+router.get('/:id/price-history', async (req, res) => {
+  try {
+    await ensureProductAndStockSchema();
+    const prodId = Number(req.params.id);
+    const [rows] = await pool.query(
+      `SELECT pp.*, u.name AS created_by_name, u.role AS created_by_role
+       FROM product_prices pp
+       LEFT JOIN users u ON pp.created_by = u.id
+       WHERE pp.product_id = ?
+       ORDER BY pp.started_at DESC, pp.id DESC`,
+      [prodId]
+    );
+
+    return res.json({
+      status: true,
+      count: rows.length,
+      data: rows.map((r) => ({
+        id: Number(r.id),
+        product_id: Number(r.product_id),
+        harga_jual: Number(r.harga_jual),
+        keterangan: r.keterangan || '',
+        started_at: r.started_at ? new Date(r.started_at).toISOString() : null,
+        ended_at: r.ended_at ? new Date(r.ended_at).toISOString() : null,
+        created_by: r.created_by ? Number(r.created_by) : null,
+        created_by_name: r.created_by_name || 'Admin',
+        created_at: r.created_at ? new Date(r.created_at).toISOString() : null,
+      })),
+    });
+  } catch (error) {
+    console.error('[GET /api/products/:id/price-history] Error:', error);
+    return res.status(500).json({ message: 'Gagal memuat riwayat harga produk: ' + error.message });
   }
 });
 

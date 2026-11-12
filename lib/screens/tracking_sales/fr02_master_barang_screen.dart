@@ -612,6 +612,8 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
     final isManager = (user?.isSuperAdmin == true || user?.isAdmin == true);
 
     final filteredProducts = _products.where((p) {
+      // Untuk Sales: hanya tampilkan barang aktif yang sedang dibawa oleh Sales (stok_sales > 0)
+      if (!isManager && (!p.isActive || p.stokSales <= 0)) return false;
       if (_searchQuery.isNotEmpty) {
         final q = _searchQuery.toLowerCase();
         final matchKode = p.kodeBarang.toLowerCase().contains(q);
@@ -624,7 +626,10 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
         }
       }
       if (_selectedStatusFilter != 'Semua') {
-        if (p.statusLabel.toLowerCase() != _selectedStatusFilter.toLowerCase()) {
+        final effectiveStatus = isManager
+            ? p.statusLabel
+            : (p.stokSales > 0 ? 'Aktif' : 'Habis');
+        if (effectiveStatus.toLowerCase() != _selectedStatusFilter.toLowerCase()) {
           return false;
         }
       }
@@ -642,9 +647,9 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
           tooltip: 'Kembali ke Dashboard',
           onPressed: _backToDashboard,
         ),
-        title: const Text(
-          'Data Barang',
-          style: TextStyle(
+        title: Text(
+          isManager ? 'Data Barang' : 'Data Barang Sales',
+          style: const TextStyle(
             color: kTextColor,
             fontWeight: FontWeight.bold,
             fontSize: 18,
@@ -1338,10 +1343,10 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      const Flexible(
+                      Flexible(
                         child: Text(
-                          'Manajemen Produk',
-                          style: TextStyle(
+                          isManager ? 'Manajemen Produk' : 'Barang yang Dibawa Sales',
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF0F172A),
@@ -1354,39 +1359,41 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: roleColor,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        onPressed: () => _openTambahBarangModal(),
-                        icon: const Icon(Icons.add, size: 18, color: Colors.white),
-                        label: const Text(
-                          'Tambah Barang',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                      if (isManager)
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: roleColor,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () => _openTambahBarangModal(),
+                          icon: const Icon(Icons.add, size: 18, color: Colors.white),
+                          label: const Text(
+                            'Tambah Barang',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
-                      ),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF334155),
-                          side: const BorderSide(color: Color(0xFFCBD5E1)),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      if (isManager)
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF334155),
+                            side: const BorderSide(color: Color(0xFFCBD5E1)),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: _exportProductData,
+                          icon: const Icon(Icons.download_rounded, size: 17),
+                          label: const Text(
+                            'Ekspor Data',
+                            style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                          ),
                         ),
-                        onPressed: _exportProductData,
-                        icon: const Icon(Icons.download_rounded, size: 17),
-                        label: const Text(
-                          'Ekspor Data',
-                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                        ),
-                      ),
                     ],
                   ),
                 ],
@@ -1626,9 +1633,9 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      SizedBox(
+                      const SizedBox(
                         width: 52,
                         child: Text(
                           'Foto',
@@ -1639,7 +1646,7 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         flex: 3,
                         child: Text(
                           'Kode Barang',
@@ -1650,7 +1657,7 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         flex: 4,
                         child: Text(
                           'Nama Barang',
@@ -1661,7 +1668,7 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         flex: 2,
                         child: Text(
                           'Satuan',
@@ -1675,15 +1682,15 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                       Expanded(
                         flex: 2,
                         child: Text(
-                          'Stok Gudang',
-                          style: TextStyle(
+                          isManager ? 'Stok Gudang' : 'Stok Dibawa',
+                          style: const TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.bold,
                             color: Color(0xFF475569),
                           ),
                         ),
                       ),
-                      Expanded(
+                      const Expanded(
                         flex: 2,
                         child: Text(
                           'Status',
@@ -1694,7 +1701,7 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                           ),
                         ),
                       ),
-                      SizedBox(
+                      const SizedBox(
                         width: 112,
                         child: Text(
                           'Aksi',
@@ -1713,12 +1720,14 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
               ],
 
               if (filteredProducts.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 28),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 28),
                   child: Center(
                     child: Text(
-                      'Tidak ada produk yang sesuai dengan filter pencarian.',
-                      style: TextStyle(color: kSecondaryColor, fontSize: 13),
+                      isManager
+                          ? 'Tidak ada produk yang sesuai dengan filter pencarian.'
+                          : 'Belum ada barang yang dibawa Sales pada filter ini.',
+                      style: const TextStyle(color: kSecondaryColor, fontSize: 13),
                     ),
                   ),
                 )
@@ -1785,11 +1794,111 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
     );
   }
 
+  void _showProductDetailDialog(ProductItem item, bool isManager) {
+    final statusText = isManager
+        ? item.statusLabel
+        : (item.stokSales > 0 ? 'Dibawa Sales' : 'Habis');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(
+          children: [
+            ProductThumbnailWidget(
+              fotoUrl: item.fotoUrl,
+              namaBarang: item.namaBarang,
+              kategori: item.kategori,
+              size: 40,
+              borderRadius: 10,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.namaBarang,
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: kTextColor),
+                  ),
+                  Text(
+                    '${item.kodeBarang} • ${item.kategori}',
+                    style: const TextStyle(fontSize: 12, color: kSecondaryColor),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Divider(),
+            const SizedBox(height: 8),
+            _detailRow('Harga Berlaku', '${item.formattedHarga} / ${item.satuan}'),
+            const SizedBox(height: 6),
+            _detailRow('Satuan', item.satuan),
+            const SizedBox(height: 6),
+            _detailRow(
+              isManager ? 'Stok Gudang' : 'Stok Dibawa Sales',
+              '${isManager ? item.stokGudang : item.stokSales} ${item.satuan}',
+            ),
+            const SizedBox(height: 6),
+            _detailRow('Status', statusText),
+            const SizedBox(height: 10),
+            const Text('Deskripsi:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: kSecondaryColor)),
+            const SizedBox(height: 4),
+            Text(
+              item.deskripsi.isNotEmpty ? item.deskripsi : 'Tidak ada deskripsi tambahan.',
+              style: const TextStyle(fontSize: 13, color: kTextColor, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Tutup'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _detailRow(String label, String val) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(fontSize: 12.5, color: kSecondaryColor)),
+        Text(val, style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: kTextColor)),
+      ],
+    );
+  }
+
+  Future<void> _handleToggleActive(ProductItem item) async {
+    final user = context.read<AuthProvider>().currentUser;
+    setState(() => item.isActive = !item.isActive);
+    await InventoryService.toggleProductActive(item, updatedBy: user?.id);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          item.isActive
+              ? 'Produk "${item.namaBarang}" diaktifkan.'
+              : 'Produk "${item.namaBarang}" dinonaktifkan.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   Widget _buildMobileProductCard(ProductItem item, bool isManager) {
-    final status = item.statusLabel;
+    final status = isManager
+        ? item.statusLabel
+        : (item.stokSales > 0 ? 'Dibawa' : 'Habis');
     Color badgeBg;
     Color badgeFg;
-    if (status == 'Aktif') {
+    if (status == 'Aktif' || status == 'Dibawa') {
       badgeBg = const Color(0xFFDCFCE7);
       badgeFg = const Color(0xFF15803D);
     } else if (status == 'Habis') {
@@ -1872,82 +1981,83 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '${item.kategori} • Satuan: ${item.satuan}',
+                      '${item.kategori} • ${item.formattedHarga} / ${item.satuan}',
                       style: const TextStyle(
                         fontSize: 11.5,
-                        color: Color(0xFF64748B),
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF047857),
                       ),
                     ),
                   ],
                 ),
               ),
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, size: 18, color: Color(0xFF64748B)),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                  onSelected: (val) {
-                    if (val == 'edit') {
-                      _openTambahBarangModal(productToEdit: item);
-                    } else if (val == 'add_stock') {
-                      _showAddStockDialog(item);
-                    } else if (val == 'toggle_active') {
-                      setState(() => item.isActive = !item.isActive);
-                      InventoryService.saveCachedProducts(_products);
-                    } else if (val == 'delete') {
-                      _deleteProduct(item);
-                    }
-                  },
-                  itemBuilder: (ctx) => [
-                    const PopupMenuItem(
-                      value: 'add_stock',
-                      child: Row(
-                        children: [
-                          Icon(Icons.add_box_outlined, size: 18, color: Color(0xFF15803D)),
-                          SizedBox(width: 8),
-                          Text('Tambah Stok Gudang / Sales'),
-                        ],
+              if (isManager)
+                SizedBox(
+                  width: 28,
+                  height: 28,
+                  child: PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, size: 18, color: Color(0xFF64748B)),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                    onSelected: (val) {
+                      if (val == 'edit') {
+                        _openTambahBarangModal(productToEdit: item);
+                      } else if (val == 'add_stock') {
+                        _showAddStockDialog(item);
+                      } else if (val == 'toggle_active') {
+                        _handleToggleActive(item);
+                      } else if (val == 'delete') {
+                        _deleteProduct(item);
+                      }
+                    },
+                    itemBuilder: (ctx) => [
+                      const PopupMenuItem(
+                        value: 'add_stock',
+                        child: Row(
+                          children: [
+                            Icon(Icons.add_box_outlined, size: 18, color: Color(0xFF15803D)),
+                            SizedBox(width: 8),
+                            Text('Tambah Stok Gudang / Sales'),
+                          ],
+                        ),
                       ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          Icon(Icons.edit_outlined, size: 18, color: Color(0xFF1D4ED8)),
-                          SizedBox(width: 8),
-                          Text('Edit Produk'),
-                        ],
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_outlined, size: 18, color: Color(0xFF1D4ED8)),
+                            SizedBox(width: 8),
+                            Text('Edit Produk'),
+                          ],
+                        ),
                       ),
-                    ),
-                    PopupMenuItem(
-                      value: 'toggle_active',
-                      child: Row(
-                        children: [
-                          Icon(
-                            item.isActive ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                            size: 18,
-                            color: Colors.orange,
-                          ),
-                          const SizedBox(width: 8),
-                          Text(item.isActive ? 'Nonaktifkan Produk' : 'Aktifkan Produk'),
-                        ],
+                      PopupMenuItem(
+                        value: 'toggle_active',
+                        child: Row(
+                          children: [
+                            Icon(
+                              item.isActive ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                              size: 18,
+                              color: Colors.orange,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(item.isActive ? 'Nonaktifkan Produk' : 'Aktifkan Produk'),
+                          ],
+                        ),
                       ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                          SizedBox(width: 8),
-                          Text('Hapus Produk'),
-                        ],
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: [
+                            Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                            SizedBox(width: 8),
+                            Text('Hapus Produk'),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -1960,35 +2070,37 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Stok Gudang',
-                        style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '${item.stokGudang} ${item.satuan}',
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF0F172A),
+                if (isManager) ...[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Stok Gudang',
+                          style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 2),
+                        Text(
+                          '${item.stokGudang} ${item.satuan}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF0F172A),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                Container(width: 1, height: 26, color: const Color(0xFFE2E8F0)),
-                const SizedBox(width: 10),
+                  Container(width: 1, height: 26, color: const Color(0xFFE2E8F0)),
+                  const SizedBox(width: 10),
+                ],
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Stok di Sales',
-                        style: TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
+                      Text(
+                        isManager ? 'Stok di Sales' : 'Stok Dibawa Sales',
+                        style: const TextStyle(fontSize: 10.5, color: Color(0xFF64748B)),
                       ),
                       const SizedBox(height: 2),
                       Text(
@@ -2013,10 +2125,12 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
-                    onPressed: () => _openTambahBarangModal(productToEdit: item),
-                    child: const Text(
-                      'Edit',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                    onPressed: isManager
+                        ? () => _openTambahBarangModal(productToEdit: item)
+                        : () => _showProductDetailDialog(item, isManager),
+                    child: Text(
+                      isManager ? 'Edit' : 'Detail',
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
@@ -2029,10 +2143,12 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
   }
 
   Widget _buildProductRow(ProductItem item, bool isManager) {
-    final status = item.statusLabel;
+    final status = isManager
+        ? item.statusLabel
+        : (item.stokSales > 0 ? 'Dibawa' : 'Habis');
     Color badgeBg;
     Color badgeFg;
-    if (status == 'Aktif') {
+    if (status == 'Aktif' || status == 'Dibawa') {
       badgeBg = const Color(0xFFDCFCE7);
       badgeFg = const Color(0xFF15803D);
     } else if (status == 'Habis') {
@@ -2075,16 +2191,30 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
             ),
           ),
 
-          // Nama Barang
+          // Nama Barang & Harga Berlaku
           Expanded(
             flex: 4,
-            child: Text(
-              item.namaBarang,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1D4ED8),
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  item.namaBarang,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF1D4ED8),
+                  ),
+                ),
+                Text(
+                  '${item.kategori} • ${item.formattedHarga}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF047857),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -2100,15 +2230,15 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
             ),
           ),
 
-          // Stok Gudang
+          // Stok Gudang (Admin) / Stok Dibawa (Sales)
           Expanded(
             flex: 2,
             child: Text(
-              '${item.stokGudang}',
-              style: const TextStyle(
+              '${isManager ? item.stokGudang : item.stokSales}',
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.bold,
-                color: Color(0xFF0F172A),
+                color: isManager ? const Color(0xFF0F172A) : const Color(0xFF15803D),
               ),
             ),
           ),
@@ -2136,7 +2266,7 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
             ),
           ),
 
-          // Aksi (Edit + Menu 3 Titik)
+          // Aksi (Edit + Menu 3 Titik untuk Admin, Detail untuk Sales)
           SizedBox(
             width: 112,
             child: FittedBox(
@@ -2156,83 +2286,86 @@ class _FR02MasterBarangScreenState extends State<FR02MasterBarangScreen> {
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      onPressed: () => _openTambahBarangModal(productToEdit: item),
-                      child: const Text(
-                        'Edit',
-                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                      onPressed: isManager
+                          ? () => _openTambahBarangModal(productToEdit: item)
+                          : () => _showProductDetailDialog(item, isManager),
+                      child: Text(
+                        isManager ? 'Edit' : 'Detail',
+                        style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 2),
-                  SizedBox(
-                    width: 28,
-                    height: 28,
-                    child: PopupMenuButton<String>(
-                      icon: const Icon(Icons.more_vert, size: 18, color: Color(0xFF64748B)),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                  onSelected: (val) {
-                    if (val == 'edit') {
-                      _openTambahBarangModal(productToEdit: item);
-                    } else if (val == 'add_stock') {
-                      _showAddStockDialog(item);
-                    } else if (val == 'toggle_active') {
-                      setState(() => item.isActive = !item.isActive);
-                      InventoryService.saveCachedProducts(_products);
-                    } else if (val == 'delete') {
-                      _deleteProduct(item);
-                    }
-                  },
-                  itemBuilder: (ctx) => [
-                    const PopupMenuItem(
-                      value: 'add_stock',
-                      child: Row(
-                        children: [
-                          Icon(Icons.add_box_outlined, size: 18, color: Color(0xFF15803D)),
-                          SizedBox(width: 8),
-                          Text('Tambah Stok Gudang / Sales'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          Icon(Icons.edit_outlined, size: 18, color: Color(0xFF1D4ED8)),
-                          SizedBox(width: 8),
-                          Text('Edit Produk'),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'toggle_active',
-                      child: Row(
-                        children: [
-                          Icon(
-                            item.isActive ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                            size: 18,
-                            color: Colors.orange,
+                  if (isManager) ...[
+                    const SizedBox(width: 2),
+                    SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, size: 18, color: Color(0xFF64748B)),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onSelected: (val) {
+                          if (val == 'edit') {
+                            _openTambahBarangModal(productToEdit: item);
+                          } else if (val == 'add_stock') {
+                            _showAddStockDialog(item);
+                          } else if (val == 'toggle_active') {
+                            _handleToggleActive(item);
+                          } else if (val == 'delete') {
+                            _deleteProduct(item);
+                          }
+                        },
+                        itemBuilder: (ctx) => [
+                          const PopupMenuItem(
+                            value: 'add_stock',
+                            child: Row(
+                              children: [
+                                Icon(Icons.add_box_outlined, size: 18, color: Color(0xFF15803D)),
+                                SizedBox(width: 8),
+                                Text('Tambah Stok Gudang / Sales'),
+                              ],
+                            ),
                           ),
-                          const SizedBox(width: 8),
-                          Text(item.isActive ? 'Nonaktifkan Produk' : 'Aktifkan Produk'),
-                        ],
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'delete',
-                      child: Row(
-                        children: [
-                          Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                          SizedBox(width: 8),
-                          Text('Hapus Produk'),
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Row(
+                              children: [
+                                Icon(Icons.edit_outlined, size: 18, color: Color(0xFF1D4ED8)),
+                                SizedBox(width: 8),
+                                Text('Edit Produk'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem(
+                            value: 'toggle_active',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  item.isActive ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                  size: 18,
+                                  color: Colors.orange,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(item.isActive ? 'Nonaktifkan Produk' : 'Aktifkan Produk'),
+                              ],
+                            ),
+                          ),
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Row(
+                              children: [
+                                Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                                SizedBox(width: 8),
+                                Text('Hapus Produk'),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
                   ],
-                  ),
-                ),
-              ],
-            ),
+                ],
+              ),
             ),
           ),
         ],

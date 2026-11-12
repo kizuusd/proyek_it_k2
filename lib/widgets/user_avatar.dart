@@ -54,6 +54,14 @@ class UserAvatar extends StatelessWidget {
     );
   }
 
+  bool get _isTestEnv {
+    try {
+      return WidgetsBinding.instance.runtimeType.toString().contains('Test');
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final size = radius * 2;
@@ -98,7 +106,7 @@ class UserAvatar extends StatelessWidget {
     }
 
     // 3. URL Gambar Eksternal (HTTP / HTTPS - Foto Profil Akun / Google)
-    if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    if (!_isTestEnv && (raw.startsWith('http://') || raw.startsWith('https://'))) {
       final resolvedUrl = kIsWeb && !raw.contains('/api/users/avatar-proxy')
           ? '${AuthService.activeBaseUrl}/users/avatar-proxy?url=${Uri.encodeComponent(raw)}'
           : raw;

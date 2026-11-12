@@ -359,9 +359,62 @@ class StockRequestItem {
   }
 }
 
+class PriceHistoryItem {
+  final int id;
+  final int productId;
+  final int hargaJual;
+  final String keterangan;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+  final String createdByName;
+  final DateTime createdAt;
+
+  PriceHistoryItem({
+    required this.id,
+    required this.productId,
+    required this.hargaJual,
+    required this.keterangan,
+    required this.startedAt,
+    this.endedAt,
+    required this.createdByName,
+    required this.createdAt,
+  });
+
+  bool get isCurrentlyActive => endedAt == null;
+
+  String get formattedHarga {
+    return 'Rp ${hargaJual.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';
+  }
+
+  factory PriceHistoryItem.fromJson(Map<String, dynamic> json) {
+    return PriceHistoryItem(
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      productId: int.tryParse(json['product_id']?.toString() ?? '0') ?? 0,
+      hargaJual: double.tryParse(json['harga_jual']?.toString() ?? '0')?.round() ?? 0,
+      keterangan: json['keterangan']?.toString() ?? '',
+      startedAt: DateTime.tryParse(json['started_at']?.toString() ?? '') ?? DateTime.now(),
+      endedAt: json['ended_at'] != null ? DateTime.tryParse(json['ended_at'].toString()) : null,
+      createdByName: json['created_by_name']?.toString() ?? 'Admin',
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'product_id': productId,
+        'harga_jual': hargaJual,
+        'keterangan': keterangan,
+        'started_at': startedAt.toIso8601String(),
+        if (endedAt != null) 'ended_at': endedAt!.toIso8601String(),
+        'created_by_name': createdByName,
+        'created_at': createdAt.toIso8601String(),
+      };
+}
+
 class InventoryService {
   static const String _productsCacheKey = 'inventory_products_cache_v3';
   static const String _requestsCacheKey = 'inventory_stock_requests_cache_v3';
+  static const String _priceHistoryCacheKey = 'inventory_price_history_cache_v1';
 
   static bool get isTestEnv {
     try {
@@ -373,6 +426,7 @@ class InventoryService {
 
   static List<ProductItem>? _inMemoryProducts;
   static List<StockRequestItem>? _inMemoryRequests;
+  static List<PriceHistoryItem>? _inMemoryPriceHistory;
 
   static List<ProductItem> defaultProducts() {
     return [
@@ -415,13 +469,61 @@ class InventoryService {
     ];
   }
 
-  static Future<void> updateProductPrice(int productId, int newPrice, {int? updatedBy}) async {
+  static Future<void> updateProductPrice(
+    int productId,
+    int newPrice, {
+    int? updatedBy,
+    String? updatedByName,
+    String? keterangan,
+    DateTime? startedAt,
+    DateTime? endedAt,
+  }) async {
     final prods = await loadCachedProducts();
     final idx = prods.indexWhere((p) => p.id == productId);
+    final oldPrice = idx != -1 ? prods[idx].harga : newPrice;
     if (idx != -1) {
       prods[idx].harga = newPrice;
       await saveCachedProducts(prods);
     }
+
+    // Catat riwayat harga ke cache lokal
+    final history = await _loadCachedPriceHistory();
+    final effectiveStart = startedAt ?? DateTime.now();
+    for (var i = 0; i < history.length; i++) {
+      if (history[i].productId == productId && history[i].endedAt == null) {
+        history[i] = PriceHistoryItem(
+          id: history[i].id,
+          productId: history[i].productId,
+          hargaJual: history[i].hargaJual,
+          keterangan: history[i].keterangan,
+          startedAt: history[i].startedAt,
+          endedAt: effectiveStart,
+          createdByName: history[i].createdByName,
+          createdAt: history[i].createdAt,
+        );
+      }
+    }
+    final nextId = history.isEmpty
+        ? 1
+        : (history.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1);
+    final note = (keterangan != null && keterangan.trim().isNotEmpty)
+        ? keterangan.trim()
+        : 'Perubahan harga dari Rp $oldPrice menjadi Rp $newPrice';
+    history.insert(
+      0,
+      PriceHistoryItem(
+        id: nextId,
+        productId: productId,
+        hargaJual: newPrice,
+        keterangan: note,
+        startedAt: effectiveStart,
+        endedAt: endedAt,
+        createdByName: updatedByName ?? 'Admin',
+        createdAt: DateTime.now(),
+      ),
+    );
+    await _saveCachedPriceHistory(history);
+
     if (!isTestEnv) {
       try {
         await AuthService.resolveBaseUrl();
@@ -435,9 +537,109 @@ class InventoryService {
               body: jsonEncode({
                 'harga': newPrice,
                 if (updatedBy != null) 'updated_by': updatedBy,
+                'keterangan': note,
+                'started_at': effectiveStart.toIso8601String(),
+                if (endedAt != null) 'ended_at': endedAt.toIso8601String(),
               }),
             )
             .timeout(const Duration(seconds: 4));
+      } catch (_) {}
+    }
+  }
+
+  static Future<List<PriceHistoryItem>> _loadCachedPriceHistory() async {
+    if (_inMemoryPriceHistory != null) {
+      return List<PriceHistoryItem>.from(_inMemoryPriceHistory!);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_priceHistoryCacheKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as List<dynamic>;
+        final list = decoded
+            .map((e) => PriceHistoryItem.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        _inMemoryPriceHistory = List<PriceHistoryItem>.from(list);
+        return list;
+      }
+    } catch (_) {}
+    final defaults = defaultProducts()
+        .map((p) => PriceHistoryItem(
+              id: p.id,
+              productId: p.id,
+              hargaJual: p.harga,
+              keterangan: 'Harga awal katalog produk',
+              startedAt: DateTime(2026, 1, 1),
+              createdByName: 'Administrator',
+              createdAt: DateTime(2026, 1, 1),
+            ))
+        .toList();
+    _inMemoryPriceHistory = List<PriceHistoryItem>.from(defaults);
+    return defaults;
+  }
+
+  static Future<void> _saveCachedPriceHistory(List<PriceHistoryItem> list) async {
+    _inMemoryPriceHistory = List<PriceHistoryItem>.from(list);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _priceHistoryCacheKey,
+        jsonEncode(list.map((e) => e.toJson()).toList()),
+      );
+    } catch (_) {}
+  }
+
+  static Future<List<PriceHistoryItem>> fetchPriceHistory(int productId) async {
+    final cached = (await _loadCachedPriceHistory())
+        .where((h) => h.productId == productId)
+        .toList();
+
+    if (isTestEnv) return cached;
+
+    try {
+      await AuthService.resolveBaseUrl();
+      final response = await http
+          .get(
+            Uri.parse('${AuthService.activeBaseUrl}/products/$productId/price-history'),
+            headers: {'Accept': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final list = body['data'] as List<dynamic>? ?? [];
+        if (list.isNotEmpty) {
+          return list
+              .map((e) => PriceHistoryItem.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        }
+      }
+    } catch (_) {}
+    return cached;
+  }
+
+  static Future<void> toggleProductActive(ProductItem item, {int? updatedBy}) async {
+    final prods = await loadCachedProducts();
+    final idx = prods.indexWhere((p) => p.id == item.id);
+    if (idx != -1) {
+      prods[idx].isActive = item.isActive;
+      await saveCachedProducts(prods);
+    }
+    if (!isTestEnv) {
+      try {
+        await AuthService.resolveBaseUrl();
+        await http
+            .put(
+              Uri.parse('${AuthService.activeBaseUrl}/products/${item.id}'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode({
+                'is_active': item.isActive ? 1 : 0,
+                if (updatedBy != null) 'updated_by': updatedBy,
+              }),
+            )
+            .timeout(const Duration(seconds: 5));
       } catch (_) {}
     }
   }
@@ -513,10 +715,12 @@ class InventoryService {
   static Future<void> clearCache() async {
     _inMemoryProducts = null;
     _inMemoryRequests = null;
+    _inMemoryPriceHistory = null;
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_productsCacheKey);
       await prefs.remove(_requestsCacheKey);
+      await prefs.remove(_priceHistoryCacheKey);
     } catch (_) {}
   }
 

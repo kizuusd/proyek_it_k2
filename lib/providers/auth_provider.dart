@@ -263,8 +263,78 @@ class AuthProvider extends ChangeNotifier {
     return await _authService.getAllUsers();
   }
 
+  // FR07 | Perbarui profil anggota (oleh Admin/Owner atau Sales sendiri)
+  Future<bool> updateMemberProfile({
+    required int targetUserId,
+    String? name,
+    String? phone,
+    String? alamat,
+    String? kodeSales,
+    String? tanggalBergabung,
+    int? koordinatorId,
+  }) async {
+    if (_currentUser == null) {
+      _errorMessage = 'Tidak ada sesi pengguna aktif.';
+      return false;
+    }
+    _errorMessage = null;
+    try {
+      final updated = await _authService.updateMemberProfile(
+        targetUserId: targetUserId,
+        actor: _currentUser!,
+        name: name,
+        phone: phone,
+        alamat: alamat,
+        kodeSales: kodeSales,
+        tanggalBergabung: tanggalBergabung,
+        koordinatorId: koordinatorId,
+      );
+      if (_currentUser!.id == updated.id ||
+          _currentUser!.email.toLowerCase() == updated.email.toLowerCase()) {
+        _currentUser = updated;
+      }
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = _cleanErrorMessage(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // FR07 | Ubah status keanggotaan (aktif / nonaktif / ditangguhkan)
+  Future<bool> updateMembershipStatus({
+    required int targetUserId,
+    required String membershipStatus,
+    required String reason,
+  }) async {
+    if (_currentUser == null) {
+      _errorMessage = 'Tidak ada sesi pengguna aktif.';
+      return false;
+    }
+    _errorMessage = null;
+    try {
+      await _authService.updateMembershipStatus(
+        targetUserId: targetUserId,
+        actor: _currentUser!,
+        membershipStatus: membershipStatus,
+        reason: reason,
+      );
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _errorMessage = _cleanErrorMessage(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<List<MembershipStatusLog>> getMembershipStatusHistory(int userId) async {
+    return await _authService.getMembershipStatusHistory(userId);
+  }
+
   // FR11 | Ubah Password (Khusus Sales & Pengguna)
-  Future<bool> updatePassword(String newPassword) async {
+  Future<bool> updatePassword(String newPassword, {String? oldPassword}) async {
     if (_currentUser == null) {
       _errorMessage = 'Tidak ada sesi pengguna aktif.';
       return false;
@@ -277,6 +347,7 @@ class AuthProvider extends ChangeNotifier {
       await _authService.updatePassword(
         email: _currentUser!.email,
         newPassword: newPassword,
+        oldPassword: oldPassword,
       );
       _status = AuthStatus.authenticated;
       notifyListeners();

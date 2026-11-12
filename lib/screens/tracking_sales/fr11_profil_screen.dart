@@ -19,8 +19,10 @@ class FR11ProfilScreen extends StatefulWidget {
 class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
   // Form & Controller untuk Ubah Password (Khusus Role Sales)
   final _passwordFormKey = GlobalKey<FormState>();
+  final TextEditingController _oldPasswordController = TextEditingController();
   final TextEditingController _newPasswordController = TextEditingController();
   final TextEditingController _confirmPasswordController = TextEditingController();
+  bool _obscureOldPassword = true;
   bool _obscureNewPassword = true;
   bool _obscureConfirmPassword = true;
   bool _isSavingPassword = false;
@@ -29,6 +31,7 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
 
   @override
   void dispose() {
+    _oldPasswordController.dispose();
     _newPasswordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -104,12 +107,14 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
 
     final success = await authProvider.updatePassword(
       _newPasswordController.text,
+      oldPassword: _oldPasswordController.text,
     );
 
     if (!mounted) return;
     setState(() => _isSavingPassword = false);
 
     if (success) {
+      _oldPasswordController.clear();
       _newPasswordController.clear();
       _confirmPasswordController.clear();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1085,165 +1090,199 @@ class _FR11ProfilScreenState extends State<FR11ProfilScreen> {
             ),
 
             // ============================================================
-            // SEKSI 4: FORM UBAH PASSWORD (KHUSUS ROLE SALES)
+            // SEKSI 4: FORM UBAH PASSWORD (UNTUK PENGGUNA LOGIN)
             // ============================================================
-            if (isSalesRole) ...[
-              const SizedBox(height: 18),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                child: Text(
-                  'KREDENSIAL AKUN SALES',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.8,
-                    color: Color(0xFF64748B),
-                  ),
+            const SizedBox(height: 18),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Text(
+                'KEAMANAN AKUN & KATA SANDI',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.8,
+                  color: Color(0xFF64748B),
                 ),
               ),
-              const SizedBox(height: 6),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Form(
-                  key: _passwordFormKey,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(Icons.lock_reset_rounded, color: kPrimaryColor, size: 20),
-                          SizedBox(width: 8),
-                          Text(
-                            'Ubah Password Sales',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF0F172A),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Pastikan password menggunakan minimal 6 karakter kombinasi yang aman.',
-                        style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Input Password Baru
-                      TextFormField(
-                        controller: _newPasswordController,
-                        obscureText: _obscureNewPassword,
-                        decoration: InputDecoration(
-                          labelText: 'Password Baru',
-                          hintText: 'Minimal 6 karakter',
-                          prefixIcon: const Icon(Icons.lock_outline_rounded, color: kPrimaryColor, size: 20),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureNewPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                              color: const Color(0xFF94A3B8),
-                              size: 20,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _obscureNewPassword = !_obscureNewPassword;
-                              });
-                            },
-                          ),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Password baru wajib diisi';
-                          }
-                          if (value.length < 6) {
-                            return 'Password baru minimal 6 karakter';
-                          }
-                          return null;
-                        },
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      // Input Konfirmasi Password Baru
-                      TextFormField(
-                        controller: _confirmPasswordController,
-                        obscureText: _obscureConfirmPassword,
-                        decoration: InputDecoration(
-                          labelText: 'Konfirmasi Password Baru',
-                          hintText: 'Ulangi password baru Anda',
-                          prefixIcon: const Icon(Icons.lock_clock_outlined, color: kPrimaryColor, size: 20),
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _obscureConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                              color: const Color(0xFF94A3B8),
-                              size: 20,
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                _obscureConfirmPassword = !_obscureConfirmPassword;
-                              });
-                            },
-                          ),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.isEmpty) {
-                            return 'Konfirmasi password wajib diisi';
-                          }
-                          if (value != _newPasswordController.text) {
-                            return 'Konfirmasi password tidak cocok';
-                          }
-                          return null;
-                        },
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      // Tombol Simpan Password Baru
-                      SizedBox(
-                        width: double.infinity,
-                        height: 44,
-                        child: ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: kPrimaryColor,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            elevation: 0,
-                          ),
-                          onPressed: _isSavingPassword ? null : _handleUpdatePassword,
-                          icon: _isSavingPassword
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.check_rounded, color: Colors.white, size: 18),
-                          label: Text(
-                            _isSavingPassword ? 'Menyimpan...' : 'Perbarui Password Sales',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
+            ),
+            const SizedBox(height: 6),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Form(
+                key: _passwordFormKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.lock_reset_rounded, color: kPrimaryColor, size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          isSalesRole ? 'Ubah Password Sales' : 'Ubah Password',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF0F172A),
                           ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Pastikan password baru minimal 6 karakter dan berbeda dari password lama.',
+                      style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Input Password Lama
+                    TextFormField(
+                      controller: _oldPasswordController,
+                      obscureText: _obscureOldPassword,
+                      decoration: InputDecoration(
+                        labelText: 'Password Lama',
+                        hintText: 'Masukkan password saat ini',
+                        prefixIcon: const Icon(Icons.lock_person_outlined, color: kPrimaryColor, size: 20),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureOldPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                            color: const Color(0xFF94A3B8),
+                            size: 20,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscureOldPassword = !_obscureOldPassword;
+                            });
+                          },
+                        ),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       ),
-                    ],
-                  ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Password lama wajib diisi';
+                        }
+                        return null;
+                      },
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Input Password Baru
+                    TextFormField(
+                      controller: _newPasswordController,
+                      obscureText: _obscureNewPassword,
+                      decoration: InputDecoration(
+                        labelText: 'Password Baru',
+                        hintText: 'Minimal 6 karakter',
+                        prefixIcon: const Icon(Icons.lock_outline_rounded, color: kPrimaryColor, size: 20),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureNewPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                            color: const Color(0xFF94A3B8),
+                            size: 20,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscureNewPassword = !_obscureNewPassword;
+                            });
+                          },
+                        ),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Password baru wajib diisi';
+                        }
+                        if (value.length < 6) {
+                          return 'Password baru minimal 6 karakter';
+                        }
+                        if (value == _oldPasswordController.text) {
+                          return 'Password baru tidak boleh sama dengan password lama';
+                        }
+                        return null;
+                      },
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Input Konfirmasi Password Baru
+                    TextFormField(
+                      controller: _confirmPasswordController,
+                      obscureText: _obscureConfirmPassword,
+                      decoration: InputDecoration(
+                        labelText: 'Konfirmasi Password Baru',
+                        hintText: 'Ulangi password baru Anda',
+                        prefixIcon: const Icon(Icons.lock_clock_outlined, color: kPrimaryColor, size: 20),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureConfirmPassword ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                            color: const Color(0xFF94A3B8),
+                            size: 20,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _obscureConfirmPassword = !_obscureConfirmPassword;
+                            });
+                          },
+                        ),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Konfirmasi password wajib diisi';
+                        }
+                        if (value != _newPasswordController.text) {
+                          return 'Konfirmasi password tidak cocok';
+                        }
+                        return null;
+                      },
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // Tombol Simpan Password Baru
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: kPrimaryColor,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          elevation: 0,
+                        ),
+                        onPressed: _isSavingPassword ? null : _handleUpdatePassword,
+                        icon: _isSavingPassword
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.check_rounded, color: Colors.white, size: 18),
+                        label: Text(
+                          _isSavingPassword ? 'Menyimpan...' : 'Perbarui Password',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
 
             const SizedBox(height: 24),
 

@@ -2,10 +2,14 @@ const express = require('express');
 const cors = require('cors');
 const { testConnection } = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
-const userRoutes = require('./routes/userRoutes');
+const { router: userRoutes, ensureUsersSchema } = require('./routes/userRoutes');
 const leaveRoutes = require('./routes/leaveRoutes');
 const { router: productRoutes, ensureProductAndStockSchema } = require('./routes/productRoutes');
 const stockRequestRoutes = require('./routes/stockRequestRoutes');
+const { router: attendanceRoutes, ensureAttendanceSchema } = require('./routes/attendanceRoutes');
+const { router: routeRoutes, ensureRouteSchema } = require('./routes/routeRoutes');
+const { router: transactionRoutes, ensureTransactionSchema } = require('./routes/transactionRoutes');
+const { router: monitoringRoutes } = require('./routes/monitoringRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -36,6 +40,10 @@ app.use('/api/users', userRoutes);
 app.use('/api/leaves', leaveRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/stock-requests', stockRequestRoutes);
+app.use('/api/attendances', attendanceRoutes);
+app.use('/api/routes', routeRoutes);
+app.use('/api/transactions', transactionRoutes);
+app.use('/api/monitoring', monitoringRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -46,7 +54,11 @@ app.use((req, res) => {
 async function startServer() {
   const connected = await testConnection();
   if (connected) {
+    await ensureUsersSchema();
     await ensureProductAndStockSchema();
+    await ensureAttendanceSchema();
+    await ensureRouteSchema();
+    await ensureTransactionSchema();
   }
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server Node.js berjalan di http://localhost:${PORT}`);

@@ -251,6 +251,8 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
     final formKey = GlobalKey<FormState>();
     final hargaController = TextEditingController(text: item.harga.toString());
     final catatanController = TextEditingController();
+    DateTime startedAt = DateTime.now();
+    DateTime? endedAt;
 
     showDialog(
       context: context,
@@ -486,6 +488,74 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        // Periode Berlaku Harga
+                        const Text(
+                          'Periode Berlaku Harga:',
+                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                                icon: const Icon(Icons.calendar_today_outlined, size: 15),
+                                label: Text(
+                                  'Mulai: ${startedAt.day}/${startedAt.month}/${startedAt.year}',
+                                  style: const TextStyle(fontSize: 11.5),
+                                ),
+                                onPressed: () async {
+                                  final picked = await showDatePicker(
+                                    context: dialogContext,
+                                    initialDate: startedAt,
+                                    firstDate: DateTime(2024),
+                                    lastDate: DateTime(2030),
+                                  );
+                                  if (picked != null) {
+                                    setDialogState(() {
+                                      startedAt = picked;
+                                      if (endedAt != null && !endedAt!.isAfter(startedAt)) {
+                                        endedAt = null;
+                                      }
+                                    });
+                                  }
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                ),
+                                icon: const Icon(Icons.event_available_outlined, size: 15),
+                                label: Text(
+                                  endedAt == null
+                                      ? 'Akhir: Aktif Terus'
+                                      : 'Akhir: ${endedAt!.day}/${endedAt!.month}/${endedAt!.year}',
+                                  style: const TextStyle(fontSize: 11.5),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                onPressed: () async {
+                                  final picked = await showDatePicker(
+                                    context: dialogContext,
+                                    initialDate: endedAt ?? startedAt.add(const Duration(days: 30)),
+                                    firstDate: startedAt.add(const Duration(days: 1)),
+                                    lastDate: DateTime(2030),
+                                  );
+                                  if (picked != null) {
+                                    setDialogState(() => endedAt = picked);
+                                  }
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
                       ],
                     ),
                   ),
@@ -519,23 +589,29 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
                           setDialogState(() => _isSaving = true);
                           setState(() => _isSaving = true);
 
+                          final nav = Navigator.of(ctx);
+                          final messenger = ScaffoldMessenger.of(context);
                           await InventoryService.updateProductPrice(
                             item.id,
                             newPrice,
                             updatedBy: currentUser?.id,
+                            updatedByName: currentUser?.name ?? 'Admin',
+                            keterangan: catatanController.text.trim(),
+                            startedAt: startedAt,
+                            endedAt: endedAt,
                           );
 
+                          if (!mounted) return;
                           setState(() {
                             item.harga = newPrice;
                             _isSaving = false;
                           });
 
-                          if (mounted && Navigator.canPop(ctx)) {
-                            Navigator.pop(ctx);
+                          if (nav.canPop()) {
+                            nav.pop();
                           }
 
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
+                          messenger.showSnackBar(
                             SnackBar(
                               content: Row(
                                 children: [
@@ -708,18 +784,19 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
   }
 
   Widget _buildSummaryCards(UserModel? user, bool isManager) {
-    final totalProduk = _products.length;
-    final totalStok = _products.fold<int>(0, (sum, p) => sum + p.stokGudang);
-    final avgPrice = _products.isEmpty
+    final visibleProducts = isManager ? _products : _products.where((p) => p.isActive).toList();
+    final totalProduk = visibleProducts.length;
+    final totalStok = visibleProducts.fold<int>(0, (sum, p) => sum + p.stokGudang);
+    final avgPrice = visibleProducts.isEmpty
         ? 0
-        : (_products.map((p) => p.harga).reduce((a, b) => a + b) / _products.length).round();
+        : (visibleProducts.map((p) => p.harga).reduce((a, b) => a + b) / visibleProducts.length).round();
 
-    final highestProduct = _products.isEmpty
+    final highestProduct = visibleProducts.isEmpty
         ? null
-        : _products.reduce((a, b) => a.harga > b.harga ? a : b);
-    final lowestProduct = _products.isEmpty
+        : visibleProducts.reduce((a, b) => a.harga > b.harga ? a : b);
+    final lowestProduct = visibleProducts.isEmpty
         ? null
-        : _products.reduce((a, b) => a.harga < b.harga ? a : b);
+        : visibleProducts.reduce((a, b) => a.harga < b.harga ? a : b);
 
     String formatRp(int value) {
       return 'Rp ${value.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';
@@ -846,8 +923,11 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
   }
 
   List<ProductItem> get _filteredProducts {
+    final user = context.read<AuthProvider>().currentUser;
+    final isManager = (user?.isSuperAdmin == true || user?.isAdmin == true);
     final query = _searchCtrl.text.trim().toLowerCase();
     var list = _products.where((p) {
+      if (!isManager && !p.isActive) return false;
       if (_selectedCategory != 'Semua' && p.kategori.toLowerCase() != _selectedCategory.toLowerCase()) {
         return false;
       }
@@ -1161,6 +1241,118 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
     );
   }
 
+  Future<void> _tampilkanRiwayatHarga(ProductItem item) async {
+    final history = await InventoryService.fetchPriceHistory(item.id);
+    if (!mounted) return;
+
+    String fmtDate(DateTime dt) {
+      final d = dt.toLocal();
+      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Row(
+          children: [
+            const Icon(Icons.history_rounded, color: kPrimaryColor),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Riwayat Harga: ${item.namaBarang}',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: kTextColor),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 440,
+          child: history.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text(
+                    'Belum ada catatan perubahan harga untuk produk ini.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 13, color: kSecondaryColor),
+                  ),
+                )
+              : ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 360),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: history.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final h = history[i];
+                      return Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: h.isCurrentlyActive ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: h.isCurrentlyActive ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  '${h.formattedHarga} / ${item.satuan}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: h.isCurrentlyActive ? const Color(0xFF15803D) : kTextColor,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: h.isCurrentlyActive ? const Color(0xFFDCFCE7) : const Color(0xFFE2E8F0),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    h.isCurrentlyActive ? 'Berlaku' : 'Riwayat',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                      color: h.isCurrentlyActive ? const Color(0xFF15803D) : const Color(0xFF475569),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              h.keterangan.isNotEmpty ? h.keterangan : 'Pembaruan harga',
+                              style: const TextStyle(fontSize: 12, color: kTextColor),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Berlaku: ${fmtDate(h.startedAt)} - ${h.endedAt != null ? fmtDate(h.endedAt!) : "Sekarang"} • Oleh: ${h.createdByName}',
+                              style: const TextStyle(fontSize: 10.5, color: kSecondaryColor),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Tutup'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDesktopTable(List<ProductItem> list, bool isManager, Color roleColor) {
     return Column(
       children: [
@@ -1199,7 +1391,7 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
                 child: Text('Harga Jual Resmi', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
               ),
               SizedBox(
-                width: 120,
+                width: 156,
                 child: Text('Aksi', textAlign: TextAlign.center, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFF475569))),
               ),
             ],
@@ -1340,32 +1532,50 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
                     ),
                   ),
                   SizedBox(
-                    width: 120,
-                    child: isManager
-                        ? ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: roleColor,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                            ),
-                            icon: const Icon(Icons.edit_outlined, size: 14),
-                            label: const Text('Ubah', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                            onPressed: () => _tampilkanDialogUbahHarga(item, isManager),
-                          )
-                        : Container(
-                            alignment: Alignment.center,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              'Harga Resmi',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
-                            ),
+                    width: 156,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            tooltip: 'Riwayat Harga',
+                            padding: const EdgeInsets.all(6),
+                            constraints: const BoxConstraints(),
+                            icon: const Icon(Icons.history_rounded, size: 19, color: Color(0xFF475569)),
+                            onPressed: () => _tampilkanRiwayatHarga(item),
                           ),
+                          const SizedBox(width: 4),
+                          if (isManager)
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: roleColor,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              icon: const Icon(Icons.edit_outlined, size: 14),
+                              label: const Text('Ubah', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                              onPressed: () => _tampilkanDialogUbahHarga(item, isManager),
+                            )
+                          else
+                            Container(
+                              alignment: Alignment.center,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: const Text(
+                                'Harga Resmi',
+                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1486,31 +1696,41 @@ class _FR03MasterHargaScreenState extends State<FR03MasterHargaScreen> {
                       ),
                     ],
                   ),
-                  if (isManager)
-                    ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: roleColor,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Riwayat Harga',
+                        icon: const Icon(Icons.history_rounded, size: 20, color: Color(0xFF475569)),
+                        onPressed: () => _tampilkanRiwayatHarga(item),
                       ),
-                      icon: const Icon(Icons.edit_note_rounded, size: 16),
-                      label: const Text('Ubah Harga', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-                      onPressed: () => _tampilkanDialogUbahHarga(item, isManager),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: const Text(
-                        'Harga Resmi',
-                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
-                      ),
-                    ),
+                      if (isManager)
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: roleColor,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.edit_note_rounded, size: 16),
+                          label: const Text('Ubah Harga', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                          onPressed: () => _tampilkanDialogUbahHarga(item, isManager),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'Harga Resmi',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF64748B)),
+                          ),
+                        ),
+                    ],
+                  ),
                 ],
               ),
             ],
