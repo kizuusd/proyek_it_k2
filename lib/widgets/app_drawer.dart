@@ -262,18 +262,17 @@ class AppDrawer extends StatelessWidget {
                 ),
                 const Divider(height: 16, indent: 16, endIndent: 16),
                 _buildSectionHeader('MASTER DATA & LOGISTIK'),
-                if (user?.isSuperAdmin == true || user?.isAdmin == true)
-                  _buildDrawerItem(
-                    context: context,
-                    icon: Icons.inventory_2_outlined,
-                    title: 'Data Barang',
-                    routeName: 'master_barang',
-                    onTap: () => _navigateTo(
-                      context,
-                      const FR02MasterBarangScreen(),
-                      'master_barang',
-                    ),
+                _buildDrawerItem(
+                  context: context,
+                  icon: Icons.inventory_2_outlined,
+                  title: isManagerial ? 'Data Barang' : 'Data Barang Sales',
+                  routeName: 'master_barang',
+                  onTap: () => _navigateTo(
+                    context,
+                    const FR02MasterBarangScreen(),
+                    'master_barang',
                   ),
+                ),
                 _buildDrawerItem(
                   context: context,
                   icon: Icons.monetization_on_outlined,
@@ -296,18 +295,21 @@ class AppDrawer extends StatelessWidget {
                     'jadwal_rute',
                   ),
                 ),
-                if (user?.isSuperAdmin != true && user?.isAdmin != true)
-                  _buildDrawerItem(
-                    context: context,
-                    icon: Icons.add_shopping_cart_outlined,
-                    title: 'Pengajuan Barang (Req)',
-                    routeName: 'pengajuan_barang',
-                    onTap: () => _navigateTo(
-                      context,
-                      const FR10PengajuanBarangScreen(),
-                      'pengajuan_barang',
-                    ),
+                _buildDrawerItem(
+                  context: context,
+                  icon: isManagerial
+                      ? Icons.fact_check_outlined
+                      : Icons.add_shopping_cart_outlined,
+                  title: isManagerial
+                      ? 'Penerimaan Pengajuan Barang'
+                      : 'Pengajuan Barang (Req)',
+                  routeName: 'pengajuan_barang',
+                  onTap: () => _navigateTo(
+                    context,
+                    const FR10PengajuanBarangScreen(),
+                    'pengajuan_barang',
                   ),
+                ),
                 const Divider(height: 16, indent: 16, endIndent: 16),
                 _buildSectionHeader('OPERASIONAL SALES'),
                 _buildDrawerItem(
@@ -427,7 +429,7 @@ class AppDrawer extends StatelessWidget {
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'CV Maju Bersama • v1.0.0',
+                    'CV Maju Bersama â€¢ v1.0.0',
                     style: TextStyle(
                       fontSize: 11,
                       color: kSecondaryColor,

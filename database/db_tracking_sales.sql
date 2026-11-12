@@ -415,11 +415,11 @@ CREATE TABLE `visit_logs` (
 -- Password default: password123
 -- --------------------------------------------------------
 INSERT INTO `users` (`id`, `name`, `email`, `password`, `phone`, `photo_url`, `role`, `is_active`, `google_id`, `google_email`, `created_by`, `last_login_at`) VALUES
-(1, 'Dimas Brahamsyah Santosa Putra', 'owner@majubersama.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '081234567890', 'https://ui-avatars.com/api/?name=Dimas+Brahamsyah&background=0D8ABC&color=fff', 'superadmin', 1, NULL, NULL, NULL, NOW()),
-(2, 'Agung Prasetyo Wibowo', 'admin@majubersama.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '081234567891', 'https://ui-avatars.com/api/?name=Agung+Prasetyo&background=2E7D32&color=fff', 'administrator', 1, NULL, NULL, 1, NOW()),
-(3, 'Muhammad Ulil Abshor', 'sales@majubersama.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '081234567892', 'https://ui-avatars.com/api/?name=Ulil+Abshor&background=E65100&color=fff', 'sales', 1, 'real_gid_999', 'sales.google@gmail.com', 2, NOW()),
-(4, 'Budi Santoso (Nonaktif)', 'inactive@majubersama.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '081234567899', NULL, 'sales', 0, NULL, NULL, 2, NULL),
-(5, 'Ahmad Hidayat', 'ahmad.sales@majubersama.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', '081298765432', NULL, 'sales', 1, 'gid_ahmad_real_123', 'ahmad.personal@gmail.com', 1, NOW()),
+(1, 'Dimas Brahamsyah Santosa Putra', 'owner@majubersama.com', '$2a$10$4nb5YaIMSE2uZID/Yd8As.gYuRSemFHEiy3JdX3dQe5a2W9bhnwjy', '081234567890', 'https://ui-avatars.com/api/?name=Dimas+Brahamsyah&background=0D8ABC&color=fff', 'superadmin', 1, NULL, NULL, NULL, NOW()),
+(2, 'Agung Prasetyo Wibowo', 'admin@majubersama.com', '$2a$10$4nb5YaIMSE2uZID/Yd8As.gYuRSemFHEiy3JdX3dQe5a2W9bhnwjy', '081234567891', 'https://ui-avatars.com/api/?name=Agung+Prasetyo&background=2E7D32&color=fff', 'administrator', 1, NULL, NULL, 1, NOW()),
+(3, 'Muhammad Ulil Abshor', 'sales@majubersama.com', '$2a$10$4nb5YaIMSE2uZID/Yd8As.gYuRSemFHEiy3JdX3dQe5a2W9bhnwjy', '081234567892', 'https://ui-avatars.com/api/?name=Ulil+Abshor&background=E65100&color=fff', 'sales', 1, 'real_gid_999', 'sales.google@gmail.com', 2, NOW()),
+(4, 'Budi Santoso (Nonaktif)', 'inactive@majubersama.com', '$2a$10$4nb5YaIMSE2uZID/Yd8As.gYuRSemFHEiy3JdX3dQe5a2W9bhnwjy', '081234567899', NULL, 'sales', 0, NULL, NULL, 2, NULL),
+(5, 'Ahmad Hidayat', 'ahmad.sales@majubersama.com', '$2a$10$4nb5YaIMSE2uZID/Yd8As.gYuRSemFHEiy3JdX3dQe5a2W9bhnwjy', '081298765432', NULL, 'sales', 1, 'gid_ahmad_real_123', 'ahmad.personal@gmail.com', 1, NOW()),
 (6, 'hjuhihisd', 'setyoagung450@gmail.com', '$2a$10$0QmVHZX5vHzvRsXVLM8XIew0AGPvoYiFpJ0lDSvpTUsN9MfEXAYK.', '9449399839', 'https://lh3.googleusercontent.com/a/ACg8ocJkXxa2Ol2zJ_zZcsnBWlXuY9PbEQ52_MCCinARYvV4Gm3Gq00=s100', 'sales', 1, '101600273800804324536', 'setyoagung450@gmail.com', 2, NOW());
 
 SET FOREIGN_KEY_CHECKS = 1;

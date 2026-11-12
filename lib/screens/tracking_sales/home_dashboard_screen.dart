@@ -1,8 +1,10 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../../constants.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/monitoring_service.dart';
+import '../../services/transaction_service.dart';
 import '../../widgets/app_drawer.dart';
 import '../../widgets/user_avatar.dart';
 import 'fr02_master_barang_screen.dart';
@@ -25,6 +27,20 @@ class HomeDashboardScreen extends StatefulWidget {
 class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _hasRedirected = false;
+  MonitoringSummaryData? _dashboardSummary;
+  int? _loadedForUserId;
+
+  Future<void> _loadDashboardSummary() async {
+    final user = context.read<AuthProvider>().currentUser;
+    if (user == null) return;
+    _loadedForUserId = user.id;
+    try {
+      final summary = await MonitoringService.loadSummary(currentUser: user);
+      if (mounted) {
+        setState(() => _dashboardSummary = summary);
+      }
+    } catch (_) {}
+  }
 
   void _confirmLogout(BuildContext context) {
     showDialog(
@@ -176,6 +192,11 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
     }
 
     final user = authProvider.currentUser;
+    if (user != null && _loadedForUserId != user.id) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _loadDashboardSummary();
+      });
+    }
 
     final userName = user?.name.isNotEmpty == true ? user!.name : 'Sales Aktif';
     final userRole = user?.roleDisplayTitle ?? 'Sales Lapangan';
@@ -224,9 +245,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
           tooltip: 'Menu',
           onPressed: () => _scaffoldKey.currentState?.openDrawer(),
         ),
-        title: const Text(
-          'Dashboard Sales',
-          style: TextStyle(color: kTextColor, fontWeight: FontWeight.bold),
+        title: Text(
+          'Dashboard $userRole',
+          style: const TextStyle(color: kTextColor, fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
         elevation: 0,
@@ -452,13 +473,15 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                           icon: Icons.account_balance_wallet,
                           iconBgColor: Colors.blue.shade50,
                           iconColor: Colors.blue.shade700,
-                          title: 'Pendapatan Minggu Ini',
-                          value: 'Rp 15.450.000',
+                          title: 'Omzet Disetujui',
+                          value: _dashboardSummary != null
+                              ? TransactionService.formatRp(_dashboardSummary!.approvedOmzet)
+                              : 'Memuat...',
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(builder: (context) => const FR05PendapatanScreen()),
-                            );
+                            ).then((_) => _loadDashboardSummary());
                           },
                         ),
                         _buildKpiCard(
@@ -466,38 +489,44 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                           iconBgColor: Colors.green.shade50,
                           iconColor: Colors.green.shade700,
                           title: 'Jadwal Rute',
-                          value: '5 Titik Kunjungan',
+                          value: _dashboardSummary != null
+                              ? '${_dashboardSummary!.completedRoutes}/${_dashboardSummary!.totalRoutes} Selesai'
+                              : 'Memuat...',
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(builder: (context) => const FR04PenjadwalanRuteScreen()),
-                            );
+                            ).then((_) => _loadDashboardSummary());
                           },
                         ),
                         _buildKpiCard(
                           icon: Icons.fingerprint,
                           iconBgColor: Colors.teal.shade50,
                           iconColor: Colors.teal.shade700,
-                          title: 'Status Presensi',
-                          value: 'Hadir (07:45 WIB)',
+                          title: 'Rekap Presensi',
+                          value: _dashboardSummary != null
+                              ? '${_dashboardSummary!.totalPresentDays} Hadir / ${_dashboardSummary!.totalAttendanceCount}'
+                              : 'Memuat...',
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(builder: (context) => const FR08AbsensiScreen()),
-                            );
+                            ).then((_) => _loadDashboardSummary());
                           },
                         ),
                         _buildKpiCard(
                           icon: Icons.assignment_turned_in,
                           iconBgColor: Colors.purple.shade50,
                           iconColor: Colors.purple.shade700,
-                          title: 'Status Perizinan',
-                          value: 'Terverifikasi',
+                          title: 'Perizinan & Monitoring',
+                          value: _dashboardSummary != null
+                              ? '${_dashboardSummary!.activeSalesCount} Sales Aktif'
+                              : 'Terverifikasi',
                           onTap: () {
                             Navigator.push(
                               context,
                               MaterialPageRoute(builder: (context) => const FR09PengajuanIzinScreen()),
-                            );
+                            ).then((_) => _loadDashboardSummary());
                           },
                         ),
                       ],
@@ -526,19 +555,19 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
                   children: [
-                    if (user?.isSuperAdmin == true || user?.isAdmin == true) ...[
-                      _buildQuickActionBtn(
-                        icon: Icons.inventory_2,
-                        label: 'Barang',
-                        accentColor: rolePrimaryColor,
-                        bgColor: roleLightColor,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const FR02MasterBarangScreen()),
-                        ),
+                    _buildQuickActionBtn(
+                      icon: Icons.inventory_2,
+                      label: (user?.isSuperAdmin == true || user?.isAdmin == true)
+                          ? 'Barang'
+                          : 'Barang Sales',
+                      accentColor: rolePrimaryColor,
+                      bgColor: roleLightColor,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const FR02MasterBarangScreen()),
                       ),
-                      const SizedBox(width: 10),
-                    ],
+                    ),
+                    const SizedBox(width: 10),
                     _buildQuickActionBtn(
                       icon: Icons.monetization_on,
                       label: 'Harga',
@@ -560,19 +589,21 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                         MaterialPageRoute(builder: (context) => const FR06MonitoringPosisiScreen()),
                       ),
                     ),
-                    if (user?.isSuperAdmin != true && user?.isAdmin != true) ...[
-                      const SizedBox(width: 10),
-                      _buildQuickActionBtn(
-                        icon: Icons.add_shopping_cart,
-                        label: 'Req Barang',
-                        accentColor: rolePrimaryColor,
-                        bgColor: roleLightColor,
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (context) => const FR10PengajuanBarangScreen()),
-                        ),
+                    const SizedBox(width: 10),
+                    _buildQuickActionBtn(
+                      icon: (user?.isSuperAdmin == true || user?.isAdmin == true)
+                          ? Icons.fact_check_outlined
+                          : Icons.add_shopping_cart,
+                      label: (user?.isSuperAdmin == true || user?.isAdmin == true)
+                          ? 'Terima Barang'
+                          : 'Req Barang',
+                      accentColor: rolePrimaryColor,
+                      bgColor: roleLightColor,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const FR10PengajuanBarangScreen()),
                       ),
-                    ],
+                    ),
                   ],
                 ),
               ),
@@ -613,9 +644,9 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '• Pastikan selalu mencatat absensi dan update titik rute kunjungan toko harian.\n'
-                      '• Menu lengkap seluruh fitur aplikasi dapat diakses kapan saja melalui Sidebar Menu.\n'
-                      '• Untuk bantuan teknis hubungi bagian Administrator.',
+                      'â€¢ Pastikan selalu mencatat absensi dan update titik rute kunjungan toko harian.\n'
+                      'â€¢ Menu lengkap seluruh fitur aplikasi dapat diakses kapan saja melalui Sidebar Menu.\n'
+                      'â€¢ Untuk bantuan teknis hubungi bagian Administrator.',
                       style: TextStyle(fontSize: 12, color: kSecondaryColor, height: 1.5),
                     ),
                   ],

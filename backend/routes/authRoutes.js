@@ -4,16 +4,34 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { pool } = require('../config/db');
 
+const { ensureUsersSchema } = require('./userRoutes');
+
 // Helper format user object agar cocok dengan UserModel Flutter
 function formatUser(row) {
+  const isActive = Boolean(row.is_active === 1 || row.is_active === true);
+  let membershipStatus = row.membership_status || (isActive ? 'aktif' : 'nonaktif');
+  if (!isActive && membershipStatus === 'aktif') {
+    membershipStatus = 'nonaktif';
+  }
+  const joinDate = row.tanggal_bergabung
+    ? new Date(row.tanggal_bergabung).toISOString().split('T')[0]
+    : row.created_at
+      ? new Date(row.created_at).toISOString().split('T')[0]
+      : null;
+
   return {
     id: Number(row.id),
+    kode_sales: row.kode_sales || (String(row.role).toLowerCase() === 'sales' ? `SLS-${String(row.id).padStart(3, '0')}` : null),
     name: row.name,
     email: row.email,
     phone: row.phone || null,
+    alamat: row.alamat || null,
+    tanggal_bergabung: joinDate,
     photo_url: row.photo_url || null,
     role: row.role,
-    is_active: Boolean(row.is_active === 1 || row.is_active === true),
+    is_active: isActive,
+    membership_status: membershipStatus,
+    koordinator_id: row.koordinator_id ? Number(row.koordinator_id) : null,
     google_id: row.google_id || null,
     google_email: row.google_email || null,
     device_token: row.device_token || null,
@@ -57,6 +75,7 @@ async function logActivity(userId, modul, aksi, deskripsi, req) {
 // --------------------------------------------------------
 router.post('/login', async (req, res) => {
   try {
+    await ensureUsersSchema();
     const { email, password, device_token } = req.body;
     if (!email || !password) {
       return res.status(400).json({ message: 'Email dan password wajib diisi.' });
@@ -74,10 +93,13 @@ router.post('/login', async (req, res) => {
 
     const user = rows[0];
 
-    // Verifikasi password (bcrypt atau plaintext dev 'password123')
+    // Verifikasi password (bcrypt atau legacy seed hash untuk 'password123')
+    const LEGACY_SEED_HASH = '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi';
     let isValidPassword = false;
     const storedPassword = user.password || '';
-    if (
+    if (storedPassword === LEGACY_SEED_HASH && password === 'password123') {
+      isValidPassword = true;
+    } else if (
       storedPassword.startsWith('$2y$') ||
       storedPassword.startsWith('$2a$') ||
       storedPassword.startsWith('$2b$')
@@ -85,7 +107,7 @@ router.post('/login', async (req, res) => {
       const normalizedHash = storedPassword.replace(/^\$2y\$/, '$2a$');
       isValidPassword = await bcrypt.compare(password, normalizedHash);
     }
-    if (!isValidPassword && (password === storedPassword || password === 'password123')) {
+    if (!isValidPassword && password === storedPassword) {
       isValidPassword = true;
     }
 
@@ -132,6 +154,7 @@ router.post('/login', async (req, res) => {
 // --------------------------------------------------------
 router.post('/google-login', async (req, res) => {
   try {
+    await ensureUsersSchema();
     const { email, google_id, photo_url, device_token } = req.body;
     console.log(`[google-login] Menerima request: email=${email}, google_id=${google_id}`);
     if (!email && !google_id) {
@@ -246,7 +269,8 @@ router.post('/google-login', async (req, res) => {
 // --------------------------------------------------------
 router.post('/register-sales', async (req, res) => {
   try {
-    const { manager_id, name, email, password, phone, link_google } = req.body;
+    await ensureUsersSchema();
+    const { manager_id, name, email, password, phone, alamat, kode_sales, koordinator_id, link_google } = req.body;
 
     // Validasi manajer
     if (!manager_id) {
@@ -289,16 +313,30 @@ router.post('/register-sales', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     const googleId = link_google ? `google_oauth_${crypto.randomBytes(6).toString('hex')}` : null;
     const googleEmail = link_google ? cleanEmail : null;
+    const customKode = kode_sales && String(kode_sales).trim() !== '' ? String(kode_sales).trim().toUpperCase() : null;
+
+    if (customKode) {
+      const [dupKode] = await pool.query(
+        'SELECT id FROM users WHERE UPPER(kode_sales) = ? AND deleted_at IS NULL LIMIT 1',
+        [customKode]
+      );
+      if (dupKode.length > 0) {
+        return res.status(409).json({ message: `Kode Sales "${customKode}" sudah digunakan.` });
+      }
+    }
 
     // Pada db_tracking_sales, kolom created_by bertipe bigint(20) FK ke users(id)
     const [insertResult] = await pool.query(
-      `INSERT INTO users (name, email, password, phone, role, is_active, google_id, google_email, created_by)
-       VALUES (?, ?, ?, ?, 'sales', 1, ?, ?, ?)`,
+      `INSERT INTO users (name, email, password, phone, alamat, tanggal_bergabung, kode_sales, koordinator_id, role, is_active, membership_status, google_id, google_email, created_by)
+       VALUES (?, ?, ?, ?, ?, CURDATE(), ?, ?, 'sales', 1, 'aktif', ?, ?, ?)`,
       [
         name.trim(),
         cleanEmail,
         hashedPassword,
         phone ? phone.trim() : null,
+        alamat ? String(alamat).trim() : null,
+        customKode,
+        koordinator_id ? Number(koordinator_id) : null,
         googleId,
         googleEmail,
         manager.id,
@@ -306,6 +344,12 @@ router.post('/register-sales', async (req, res) => {
     );
 
     const newId = insertResult.insertId;
+    if (!customKode) {
+      await pool.query('UPDATE users SET kode_sales = ? WHERE id = ?', [
+        `SLS-${String(newId).padStart(3, '0')}`,
+        newId,
+      ]);
+    }
     const [newUserRows] = await pool.query('SELECT * FROM users WHERE id = ?', [newId]);
 
     await logActivity(

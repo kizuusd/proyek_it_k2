@@ -15,6 +15,7 @@ class _FR01LoginScreenState extends State<FR01LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final FocusNode _passwordFocusNode = FocusNode();
 
   bool _obscurePassword = true;
 
@@ -22,6 +23,7 @@ class _FR01LoginScreenState extends State<FR01LoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -245,6 +247,14 @@ class _FR01LoginScreenState extends State<FR01LoginScreen> {
                         TextFormField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          onFieldSubmitted: (_) {
+                            if (_passwordController.text.trim().isNotEmpty) {
+                              if (!authProvider.isLoading) _handleLogin();
+                            } else {
+                              FocusScope.of(context).requestFocus(_passwordFocusNode);
+                            }
+                          },
                           decoration: InputDecoration(
                             labelText: 'Email',
                             hintText: 'nama@majubersama.com',
@@ -280,7 +290,14 @@ class _FR01LoginScreenState extends State<FR01LoginScreen> {
                         // Password Field
                         TextFormField(
                           controller: _passwordController,
+                          focusNode: _passwordFocusNode,
                           obscureText: _obscurePassword,
+                          textInputAction: TextInputAction.done,
+                          onFieldSubmitted: (_) {
+                            if (!authProvider.isLoading) {
+                              _handleLogin();
+                            }
+                          },
                           decoration: InputDecoration(
                             labelText: 'Password',
                             hintText: 'Masukkan password Anda',

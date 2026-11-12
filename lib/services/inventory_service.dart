@@ -17,6 +17,7 @@ class ProductItem {
   String satuan;
   int stokGudang;
   int stokSales;
+  int harga;
   String? fotoUrl;
   bool isActive;
 
@@ -29,6 +30,7 @@ class ProductItem {
     this.satuan = 'Pack',
     this.stokGudang = 0,
     this.stokSales = 0,
+    this.harga = 15000,
     this.fotoUrl,
     this.isActive = true,
   });
@@ -40,6 +42,10 @@ class ProductItem {
   }
 
   String get dropdownLabel => '$kategori - $namaBarang';
+
+  String get formattedHarga {
+    return 'Rp ${harga.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';
+  }
 
   factory ProductItem.fromJson(Map<String, dynamic> json) {
     final rawId = json['id'];
@@ -60,9 +66,23 @@ class ProductItem {
       satuan: json['satuan']?.toString().isNotEmpty == true ? json['satuan'].toString() : 'Pack',
       stokGudang: int.tryParse(json['stok_gudang']?.toString() ?? '0') ?? 0,
       stokSales: int.tryParse(json['stok_sales']?.toString() ?? '0') ?? 0,
+      harga: int.tryParse(json['harga']?.toString() ?? '') ?? _inferDefaultPrice(parsedId),
       fotoUrl: json['foto_url']?.toString(),
       isActive: active,
     );
+  }
+
+  static int _inferDefaultPrice(int id) {
+    switch (id) {
+      case 1:
+        return 15000;
+      case 2:
+        return 22000;
+      case 3:
+        return 18500;
+      default:
+        return 15000;
+    }
   }
 
   static String _inferCategoryFromName(String name) {
@@ -86,6 +106,7 @@ class ProductItem {
       'satuan': satuan,
       'stok_gudang': stokGudang,
       'stok_sales': stokSales,
+      'harga': harga,
       'foto_url': fotoUrl,
       'is_active': isActive ? 1 : 0,
     };
@@ -100,6 +121,7 @@ class ProductItem {
     String? satuan,
     int? stokGudang,
     int? stokSales,
+    int? harga,
     String? fotoUrl,
     bool? isActive,
   }) {
@@ -112,6 +134,7 @@ class ProductItem {
       satuan: satuan ?? this.satuan,
       stokGudang: stokGudang ?? this.stokGudang,
       stokSales: stokSales ?? this.stokSales,
+      harga: harga ?? this.harga,
       fotoUrl: fotoUrl ?? this.fotoUrl,
       isActive: isActive ?? this.isActive,
     );
@@ -336,9 +359,62 @@ class StockRequestItem {
   }
 }
 
+class PriceHistoryItem {
+  final int id;
+  final int productId;
+  final int hargaJual;
+  final String keterangan;
+  final DateTime startedAt;
+  final DateTime? endedAt;
+  final String createdByName;
+  final DateTime createdAt;
+
+  PriceHistoryItem({
+    required this.id,
+    required this.productId,
+    required this.hargaJual,
+    required this.keterangan,
+    required this.startedAt,
+    this.endedAt,
+    required this.createdByName,
+    required this.createdAt,
+  });
+
+  bool get isCurrentlyActive => endedAt == null;
+
+  String get formattedHarga {
+    return 'Rp ${hargaJual.toString().replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';
+  }
+
+  factory PriceHistoryItem.fromJson(Map<String, dynamic> json) {
+    return PriceHistoryItem(
+      id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
+      productId: int.tryParse(json['product_id']?.toString() ?? '0') ?? 0,
+      hargaJual: double.tryParse(json['harga_jual']?.toString() ?? '0')?.round() ?? 0,
+      keterangan: json['keterangan']?.toString() ?? '',
+      startedAt: DateTime.tryParse(json['started_at']?.toString() ?? '') ?? DateTime.now(),
+      endedAt: json['ended_at'] != null ? DateTime.tryParse(json['ended_at'].toString()) : null,
+      createdByName: json['created_by_name']?.toString() ?? 'Admin',
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ?? DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'product_id': productId,
+        'harga_jual': hargaJual,
+        'keterangan': keterangan,
+        'started_at': startedAt.toIso8601String(),
+        if (endedAt != null) 'ended_at': endedAt!.toIso8601String(),
+        'created_by_name': createdByName,
+        'created_at': createdAt.toIso8601String(),
+      };
+}
+
 class InventoryService {
   static const String _productsCacheKey = 'inventory_products_cache_v3';
   static const String _requestsCacheKey = 'inventory_stock_requests_cache_v3';
+  static const String _priceHistoryCacheKey = 'inventory_price_history_cache_v1';
 
   static bool get isTestEnv {
     try {
@@ -348,29 +424,329 @@ class InventoryService {
     return false;
   }
 
+  static List<ProductItem>? _inMemoryProducts;
+  static List<StockRequestItem>? _inMemoryRequests;
+  static List<PriceHistoryItem>? _inMemoryPriceHistory;
+
   static List<ProductItem> defaultProducts() {
-    return <ProductItem>[];
+    return [
+      ProductItem(
+        id: 1,
+        kodeBarang: 'BRG-001',
+        namaBarang: 'Plastik Kresek 1kg',
+        kategori: 'Plastik',
+        deskripsi: 'Kantong plastik kresek HDPE putih 1kg kualitas tebal',
+        satuan: 'Pack',
+        stokGudang: 120,
+        stokSales: 15,
+        harga: 15000,
+        fotoUrl: 'preset:plastik',
+      ),
+      ProductItem(
+        id: 2,
+        kodeBarang: 'BRG-002',
+        namaBarang: 'Plastik HD Bening 20x30',
+        kategori: 'Plastik',
+        deskripsi: 'Plastik HD bening tebal 20x30 cm',
+        satuan: 'Pack',
+        stokGudang: 85,
+        stokSales: 10,
+        harga: 22000,
+        fotoUrl: 'preset:plastik',
+      ),
+      ProductItem(
+        id: 3,
+        kodeBarang: 'BRG-003',
+        namaBarang: 'Minyak Goreng 1L',
+        kategori: 'Sembako',
+        deskripsi: 'Minyak goreng sawit kemasan bantal 1 liter',
+        satuan: 'Pcs',
+        stokGudang: 200,
+        stokSales: 25,
+        harga: 18500,
+        fotoUrl: 'preset:minyak',
+      ),
+    ];
+  }
+
+  static Future<void> updateProductPrice(
+    int productId,
+    int newPrice, {
+    int? updatedBy,
+    String? updatedByName,
+    String? keterangan,
+    DateTime? startedAt,
+    DateTime? endedAt,
+  }) async {
+    final prods = await loadCachedProducts();
+    final idx = prods.indexWhere((p) => p.id == productId);
+    final oldPrice = idx != -1 ? prods[idx].harga : newPrice;
+    if (idx != -1) {
+      prods[idx].harga = newPrice;
+      await saveCachedProducts(prods);
+    }
+
+    // Catat riwayat harga ke cache lokal
+    final history = await _loadCachedPriceHistory();
+    final effectiveStart = startedAt ?? DateTime.now();
+    for (var i = 0; i < history.length; i++) {
+      if (history[i].productId == productId && history[i].endedAt == null) {
+        history[i] = PriceHistoryItem(
+          id: history[i].id,
+          productId: history[i].productId,
+          hargaJual: history[i].hargaJual,
+          keterangan: history[i].keterangan,
+          startedAt: history[i].startedAt,
+          endedAt: effectiveStart,
+          createdByName: history[i].createdByName,
+          createdAt: history[i].createdAt,
+        );
+      }
+    }
+    final nextId = history.isEmpty
+        ? 1
+        : (history.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1);
+    final note = (keterangan != null && keterangan.trim().isNotEmpty)
+        ? keterangan.trim()
+        : 'Perubahan harga dari Rp $oldPrice menjadi Rp $newPrice';
+    history.insert(
+      0,
+      PriceHistoryItem(
+        id: nextId,
+        productId: productId,
+        hargaJual: newPrice,
+        keterangan: note,
+        startedAt: effectiveStart,
+        endedAt: endedAt,
+        createdByName: updatedByName ?? 'Admin',
+        createdAt: DateTime.now(),
+      ),
+    );
+    await _saveCachedPriceHistory(history);
+
+    if (!isTestEnv) {
+      try {
+        await AuthService.resolveBaseUrl();
+        await http
+            .patch(
+              Uri.parse('${AuthService.activeBaseUrl}/products/$productId/price'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode({
+                'harga': newPrice,
+                if (updatedBy != null) 'updated_by': updatedBy,
+                'keterangan': note,
+                'started_at': effectiveStart.toIso8601String(),
+                if (endedAt != null) 'ended_at': endedAt.toIso8601String(),
+              }),
+            )
+            .timeout(const Duration(seconds: 4));
+      } catch (_) {}
+    }
+  }
+
+  static Future<List<PriceHistoryItem>> _loadCachedPriceHistory() async {
+    if (_inMemoryPriceHistory != null) {
+      return List<PriceHistoryItem>.from(_inMemoryPriceHistory!);
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_priceHistoryCacheKey);
+      if (raw != null && raw.isNotEmpty) {
+        final decoded = jsonDecode(raw) as List<dynamic>;
+        final list = decoded
+            .map((e) => PriceHistoryItem.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        _inMemoryPriceHistory = List<PriceHistoryItem>.from(list);
+        return list;
+      }
+    } catch (_) {}
+    final defaults = defaultProducts()
+        .map((p) => PriceHistoryItem(
+              id: p.id,
+              productId: p.id,
+              hargaJual: p.harga,
+              keterangan: 'Harga awal katalog produk',
+              startedAt: DateTime(2026, 1, 1),
+              createdByName: 'Administrator',
+              createdAt: DateTime(2026, 1, 1),
+            ))
+        .toList();
+    _inMemoryPriceHistory = List<PriceHistoryItem>.from(defaults);
+    return defaults;
+  }
+
+  static Future<void> _saveCachedPriceHistory(List<PriceHistoryItem> list) async {
+    _inMemoryPriceHistory = List<PriceHistoryItem>.from(list);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _priceHistoryCacheKey,
+        jsonEncode(list.map((e) => e.toJson()).toList()),
+      );
+    } catch (_) {}
+  }
+
+  static Future<List<PriceHistoryItem>> fetchPriceHistory(int productId) async {
+    final cached = (await _loadCachedPriceHistory())
+        .where((h) => h.productId == productId)
+        .toList();
+
+    if (isTestEnv) return cached;
+
+    try {
+      await AuthService.resolveBaseUrl();
+      final response = await http
+          .get(
+            Uri.parse('${AuthService.activeBaseUrl}/products/$productId/price-history'),
+            headers: {'Accept': 'application/json'},
+          )
+          .timeout(const Duration(seconds: 4));
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final list = body['data'] as List<dynamic>? ?? [];
+        if (list.isNotEmpty) {
+          return list
+              .map((e) => PriceHistoryItem.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        }
+      }
+    } catch (_) {}
+    return cached;
+  }
+
+  static Future<void> toggleProductActive(ProductItem item, {int? updatedBy}) async {
+    final prods = await loadCachedProducts();
+    final idx = prods.indexWhere((p) => p.id == item.id);
+    if (idx != -1) {
+      prods[idx].isActive = item.isActive;
+      await saveCachedProducts(prods);
+    }
+    if (!isTestEnv) {
+      try {
+        await AuthService.resolveBaseUrl();
+        await http
+            .put(
+              Uri.parse('${AuthService.activeBaseUrl}/products/${item.id}'),
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+              },
+              body: jsonEncode({
+                'is_active': item.isActive ? 1 : 0,
+                if (updatedBy != null) 'updated_by': updatedBy,
+              }),
+            )
+            .timeout(const Duration(seconds: 5));
+      } catch (_) {}
+    }
   }
 
   static List<StockRequestItem> defaultStockRequests() {
-    return <StockRequestItem>[];
+    return [
+      StockRequestItem(
+        id: 1,
+        kodePengajuan: 'REQ-2026-001',
+        salesId: 3,
+        salesName: 'Muhammad Ulil Abshor',
+        salesEmail: 'sales@majubersama.com',
+        productId: 1,
+        kodeBarang: 'BRG-001',
+        namaBarang: 'Plastik Kresek 1kg',
+        kategori: 'Plastik',
+        satuan: 'Pack',
+        fotoUrl: 'preset:plastik',
+        stokGudang: 120,
+        stokSales: 15,
+        jenis: JenisPengajuanStok.tambah,
+        qtyDiajukan: 10,
+        alasan: 'Pengajuan Tambah Stok toko area barat',
+        tanggalPengajuan: '3 Nov 2026',
+        status: StatusPengajuanStok.menunggu,
+      ),
+      StockRequestItem(
+        id: 2,
+        kodePengajuan: 'REQ-2026-002',
+        salesId: 5,
+        salesName: 'Ahmad Hidayat',
+        salesEmail: 'ahmad.sales@majubersama.com',
+        productId: 2,
+        kodeBarang: 'BRG-002',
+        namaBarang: 'Plastik HD Bening 20x30',
+        kategori: 'Plastik',
+        satuan: 'Pack',
+        fotoUrl: 'preset:plastik',
+        stokGudang: 85,
+        stokSales: 10,
+        jenis: JenisPengajuanStok.tambah,
+        qtyDiajukan: 5,
+        alasan: 'Stok di toko hampir habis, mohon untuk ditambahkan.',
+        tanggalPengajuan: '2 Nov 2026',
+        status: StatusPengajuanStok.menunggu,
+      ),
+      StockRequestItem(
+        id: 3,
+        kodePengajuan: 'REQ-2026-003',
+        salesId: 3,
+        salesName: 'Muhammad Ulil Abshor',
+        salesEmail: 'sales@majubersama.com',
+        productId: 3,
+        kodeBarang: 'BRG-003',
+        namaBarang: 'Minyak Goreng 1L',
+        kategori: 'Sembako',
+        satuan: 'Pcs',
+        fotoUrl: 'preset:minyak',
+        stokGudang: 200,
+        stokSales: 25,
+        jenis: JenisPengajuanStok.retur,
+        qtyDiajukan: 2,
+        qtyDisetujui: 2,
+        alasan: 'Kemasan bocor dari pabrik saat pengiriman ke toko.',
+        tanggalPengajuan: '1 Nov 2026',
+        status: StatusPengajuanStok.disetujui,
+        catatanAdmin: 'Retur telah diterima dan dicatat di gudang.',
+        diprosesOleh: 'Agung Prasetyo Wibowo (Admin)',
+      ),
+    ];
+  }
+
+  static Future<void> clearCache() async {
+    _inMemoryProducts = null;
+    _inMemoryRequests = null;
+    _inMemoryPriceHistory = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_productsCacheKey);
+      await prefs.remove(_requestsCacheKey);
+      await prefs.remove(_priceHistoryCacheKey);
+    } catch (_) {}
   }
 
   static Future<List<ProductItem>> loadCachedProducts() async {
+    if (_inMemoryProducts != null) {
+      return List<ProductItem>.from(_inMemoryProducts!);
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_productsCacheKey);
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw) as List<dynamic>;
-        return decoded
+        final list = decoded
             .map((e) => ProductItem.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
+        _inMemoryProducts = List<ProductItem>.from(list);
+        return list;
       }
     } catch (_) {}
-    return defaultProducts();
+    final defaults = defaultProducts();
+    _inMemoryProducts = List<ProductItem>.from(defaults);
+    return defaults;
   }
 
   static Future<void> saveCachedProducts(List<ProductItem> list) async {
+    _inMemoryProducts = List<ProductItem>.from(list);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
@@ -381,20 +757,28 @@ class InventoryService {
   }
 
   static Future<List<StockRequestItem>> loadCachedRequests() async {
+    if (_inMemoryRequests != null) {
+      return List<StockRequestItem>.from(_inMemoryRequests!);
+    }
     try {
       final prefs = await SharedPreferences.getInstance();
       final raw = prefs.getString(_requestsCacheKey);
       if (raw != null && raw.isNotEmpty) {
         final decoded = jsonDecode(raw) as List<dynamic>;
-        return decoded
+        final list = decoded
             .map((e) => StockRequestItem.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
+        _inMemoryRequests = List<StockRequestItem>.from(list);
+        return list;
       }
     } catch (_) {}
-    return defaultStockRequests();
+    final defaults = defaultStockRequests();
+    _inMemoryRequests = List<StockRequestItem>.from(defaults);
+    return defaults;
   }
 
   static Future<void> saveCachedRequests(List<StockRequestItem> list) async {
+    _inMemoryRequests = List<StockRequestItem>.from(list);
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(
@@ -409,22 +793,31 @@ class InventoryService {
     if (isTestEnv) return cached;
 
     try {
-      final response = await AuthService.requestWithFailover(
-        (base) => http
-            .get(
-              Uri.parse('$base/products${salesId != null ? '?sales_id=$salesId' : ''}'),
-              headers: {'Accept': 'application/json'},
-            )
-            .timeout(const Duration(seconds: 5)),
-      );
+      await AuthService.resolveBaseUrl();
+      final response = await http
+          .get(
+            Uri.parse('${AuthService.activeBaseUrl}/products${salesId != null ? '?sales_id=$salesId' : ''}'),
+            headers: {'Accept': 'application/json'},
+          )
+          .timeout(const Duration(milliseconds: 2000));
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
         final data = body['data'] as List<dynamic>? ?? [];
-        final fetched = data
-            .map((e) => ProductItem.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-        await saveCachedProducts(fetched);
-        return fetched;
+        if (data.isNotEmpty) {
+          final fetched = data
+              .map((e) => ProductItem.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+          final Map<int, ProductItem> map = {};
+          for (final p in cached) {
+            map[p.id] = p;
+          }
+          for (final p in fetched) {
+            map[p.id] = p;
+          }
+          final merged = map.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+          await saveCachedProducts(merged);
+          return merged;
+        }
       }
     } catch (_) {}
     return cached;
@@ -432,27 +825,49 @@ class InventoryService {
 
   static Future<List<StockRequestItem>> fetchStockRequests({int? salesId}) async {
     final cached = await loadCachedRequests();
-    if (isTestEnv) return cached;
+    if (isTestEnv) {
+      if (salesId != null) {
+        return cached.where((r) => r.salesId == salesId).toList();
+      }
+      return cached;
+    }
 
     try {
-      final response = await AuthService.requestWithFailover(
-        (base) => http
-            .get(
-              Uri.parse('$base/stock-requests'),
-              headers: {'Accept': 'application/json'},
-            )
-            .timeout(const Duration(seconds: 5)),
-      );
+      await AuthService.resolveBaseUrl();
+      final queryParam = salesId != null ? '?sales_id=$salesId' : '';
+      final response = await http
+          .get(
+            Uri.parse('${AuthService.activeBaseUrl}/stock-requests$queryParam'),
+            headers: {'Accept': 'application/json'},
+          )
+          .timeout(const Duration(milliseconds: 2000));
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
         final data = body['data'] as List<dynamic>? ?? [];
-        final fetched = data
-            .map((e) => StockRequestItem.fromJson(Map<String, dynamic>.from(e as Map)))
-            .toList();
-        await saveCachedRequests(fetched);
-        return fetched;
+        if (data.isNotEmpty) {
+          final fetched = data
+              .map((e) => StockRequestItem.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+          final Map<int, StockRequestItem> map = {};
+          for (final r in cached) {
+            map[r.id] = r;
+          }
+          for (final r in fetched) {
+            map[r.id] = r;
+          }
+          final merged = map.values.toList()..sort((a, b) => b.id.compareTo(a.id));
+          await saveCachedRequests(merged);
+          if (salesId != null) {
+            return merged.where((r) => r.salesId == salesId).toList();
+          }
+          return merged;
+        }
       }
     } catch (_) {}
+
+    if (salesId != null) {
+      return cached.where((r) => r.salesId == salesId).toList();
+    }
     return cached;
   }
 }

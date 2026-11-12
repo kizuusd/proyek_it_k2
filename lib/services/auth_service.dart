@@ -9,6 +9,13 @@ import '../models/auth_response_model.dart';
 import '../models/user_model.dart';
 import 'session_service.dart';
 
+class _ApiResponseException implements Exception {
+  final String message;
+  _ApiResponseException(this.message);
+  @override
+  String toString() => message;
+}
+
 class AuthService {
   final SessionService _sessionService = SessionService();
   final GoogleSignIn _googleSignIn = GoogleSignIn(
@@ -18,8 +25,10 @@ class AuthService {
     scopes: ['email', 'profile'],
   );
   static const String _mockUsersStorageKey = 'auth_mock_users';
+  static const String _mockStatusLogsKey = 'auth_mock_membership_logs';
   static const String _lastResolvedUrlKey = 'auth_last_resolved_base_url';
   Future<void>? _mockUsersLoad;
+  final List<MembershipStatusLog> _mockStatusLogs = [];
 
   // Base URL konfigurasi REST API backend (Node.js Express + MySQL)
   static const String baseUrl = 'http://127.0.0.1:8000/api';
@@ -218,34 +227,52 @@ class AuthService {
     },
     {
       'id': 3,
+      'kode_sales': 'SLS-003',
       'name': 'Muhammad Ulil Abshor',
       'email': 'sales@majubersama.com',
       'password': 'password123',
       'phone': '081234567892',
+      'alamat': 'Jl. Pahlawan No. 18, Surabaya',
+      'tanggal_bergabung': '2026-01-15',
       'role': 'sales',
       'is_active': 1,
+      'membership_status': 'aktif',
+      'koordinator_id': 2,
+      'koordinator_name': 'Agung Prasetyo Wibowo',
       'google_id': 'google_oauth_sales_123',
       'last_login_at': null,
     },
     {
       'id': 4,
+      'kode_sales': 'SLS-004',
       'name': 'Budi Santoso (Nonaktif)',
       'email': 'inactive@majubersama.com',
       'password': 'password123',
       'phone': '081234567899',
+      'alamat': 'Jl. Ahmad Yani No. 40, Sidoarjo',
+      'tanggal_bergabung': '2025-11-01',
       'role': 'sales',
       'is_active': 0, // Akun dinonaktifkan
+      'membership_status': 'nonaktif',
+      'koordinator_id': 2,
+      'koordinator_name': 'Agung Prasetyo Wibowo',
       'google_id': null,
       'last_login_at': null,
     },
     {
       'id': 5,
+      'kode_sales': 'SLS-005',
       'name': 'Ahmad Hidayat',
       'email': 'ahmad.sales@majubersama.com',
       'password': 'password123',
       'phone': '081298765432',
+      'alamat': 'Jl. Diponegoro No. 5, Gresik',
+      'tanggal_bergabung': '2026-02-10',
       'role': 'sales',
       'is_active': 1,
+      'membership_status': 'aktif',
+      'koordinator_id': 2,
+      'koordinator_name': 'Agung Prasetyo Wibowo',
       'google_id': null,
       'last_login_at': null,
     },
@@ -339,16 +366,37 @@ class AuthService {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final authResponse = AuthResponseModel.fromJson(data);
-        
+
         if (!authResponse.user.isActive) {
           throw Exception('Akun Anda dinonaktifkan. Hubungi Administrator.');
         }
+
+        await _ensureMockUsersLoaded();
+        final foundIdx = _mockUsers.indexWhere(
+          (u) => u['id'] == authResponse.user.id ||
+              (u['email'] as String).toLowerCase() == authResponse.user.email.toLowerCase(),
+        );
+        if (foundIdx != -1) {
+          _mockUsers[foundIdx] = {
+            ..._mockUsers[foundIdx],
+            ...authResponse.user.toJson(),
+            'password': password,
+            '_persist_locally': true,
+          };
+        } else {
+          _mockUsers.add({
+            ...authResponse.user.toJson(),
+            'password': password,
+            '_persist_locally': true,
+          });
+        }
+        await _saveMockUsers();
 
         await _sessionService.saveSession(authResponse);
         return authResponse;
       } else {
         final errBody = jsonDecode(response.body);
-        throw Exception(errBody['message'] ?? 'Login gagal. Periksa kembali email dan password.');
+        throw _ApiResponseException(errBody['message'] ?? 'Login gagal. Periksa kembali email dan password.');
       }
     }
 
@@ -946,19 +994,33 @@ class AuthService {
   Future<bool> updatePassword({
     required String email,
     required String newPassword,
+    String? oldPassword,
   }) async {
     final cleanEmail = email.trim().toLowerCase();
 
+    if (newPassword.length < 6) {
+      throw Exception('Password baru minimal 6 karakter.');
+    }
+    if (oldPassword != null && newPassword == oldPassword) {
+      throw Exception('Password baru tidak boleh sama dengan password lama.');
+    }
+
     if (!shouldUseMock) {
       try {
+        final token = await _sessionService.getToken();
         final response = await requestWithFailover(
           (base) => http
               .post(
                 Uri.parse('$base/users/change-password'),
-                headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+                },
                 body: jsonEncode({
                   'email': cleanEmail,
                   'new_password': newPassword,
+                  if (oldPassword != null) 'old_password': oldPassword,
                 }),
               )
               .timeout(const Duration(seconds: 6)),
@@ -977,13 +1039,11 @@ class AuthService {
           return true;
         } else {
           final errBody = jsonDecode(response.body);
-          throw Exception(errBody['message'] ?? 'Gagal memperbarui password.');
+          throw _ApiResponseException(errBody['message'] ?? 'Gagal memperbarui password.');
         }
-      } catch (e) {
-        if (e.toString().contains('Gagal memperbarui') ||
-            e.toString().contains('tidak ditemukan')) {
-          rethrow;
-        }
+      } on _ApiResponseException {
+        rethrow;
+      } catch (_) {
         // Fallback lokal jika offline
       }
     }
@@ -997,10 +1057,268 @@ class AuthService {
       throw Exception('Akun dengan email "$cleanEmail" tidak ditemukan.');
     }
 
+    // Validasi mock: cek kecocokan password lama jika diberikan
+    if (oldPassword != null) {
+      final storedPassword = _mockUsers[userIndex]['password'] as String?;
+      if (storedPassword != oldPassword) {
+        throw Exception('Password lama yang Anda masukkan salah.');
+      }
+    }
+
     _mockUsers[userIndex]['password'] = newPassword;
     _mockUsers[userIndex]['_persist_locally'] = true;
     await _saveMockUsers();
     return true;
+  }
+
+  // ============================================================
+  // KELOLA KEANGGOTAAN SALES (DOC 04)
+  // ============================================================
+  Future<UserModel> updateMemberProfile({
+    required int targetUserId,
+    required UserModel actor,
+    String? name,
+    String? phone,
+    String? alamat,
+    String? kodeSales,
+    String? tanggalBergabung,
+    int? koordinatorId,
+  }) async {
+    if (!actor.isManager && actor.id != targetUserId) {
+      throw Exception('Akses ditolak: Anda hanya dapat mengubah informasi pribadi Anda sendiri.');
+    }
+
+    if (!shouldUseMock) {
+      try {
+        final token = await _sessionService.getToken();
+        final response = await requestWithFailover(
+          (base) => http
+              .put(
+                Uri.parse('$base/users/$targetUserId/member'),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+                },
+                body: jsonEncode({
+                  'actor_id': actor.id,
+                  'actor_email': actor.email,
+                  if (name != null) 'name': name.trim(),
+                  if (phone != null) 'phone': phone.trim(),
+                  if (alamat != null) 'alamat': alamat.trim(),
+                  if (actor.isManager && kodeSales != null) 'kode_sales': kodeSales.trim().toUpperCase(),
+                  if (actor.isManager && tanggalBergabung != null) 'tanggal_bergabung': tanggalBergabung.trim(),
+                  if (actor.isManager && koordinatorId != null) 'koordinator_id': koordinatorId,
+                }),
+              )
+              .timeout(const Duration(seconds: 6)),
+        );
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final updated = UserModel.fromJson(Map<String, dynamic>.from(data['user']));
+          await _syncLocalMockUser(updated);
+          return updated;
+        } else {
+          final errBody = jsonDecode(response.body);
+          throw Exception(errBody['message'] ?? 'Gagal memperbarui data anggota.');
+        }
+      } catch (e) {
+        if (e.toString().contains('sudah digunakan') || e.toString().contains('Akses ditolak')) {
+          rethrow;
+        }
+      }
+    }
+
+    await _ensureMockUsersLoaded();
+    final idx = _mockUsers.indexWhere((u) => u['id'] == targetUserId);
+    if (idx == -1) {
+      throw Exception('Data anggota tidak ditemukan.');
+    }
+
+    if (actor.isManager && kodeSales != null && kodeSales.trim().isNotEmpty) {
+      final cleanKode = kodeSales.trim().toUpperCase();
+      final dup = _mockUsers.any(
+        (u) => u['id'] != targetUserId && (u['kode_sales']?.toString().toUpperCase() == cleanKode),
+      );
+      if (dup) {
+        throw Exception('Kode Sales "$cleanKode" sudah digunakan oleh anggota lain.');
+      }
+      _mockUsers[idx]['kode_sales'] = cleanKode;
+    }
+
+    if (name != null && name.trim().isNotEmpty) {
+      _mockUsers[idx]['name'] = name.trim();
+    }
+    if (phone != null) {
+      _mockUsers[idx]['phone'] = phone.trim();
+    }
+    if (alamat != null) {
+      _mockUsers[idx]['alamat'] = alamat.trim();
+    }
+    if (actor.isManager && tanggalBergabung != null) {
+      _mockUsers[idx]['tanggal_bergabung'] = tanggalBergabung.trim();
+    }
+    if (actor.isManager && koordinatorId != null) {
+      _mockUsers[idx]['koordinator_id'] = koordinatorId;
+      final coord = _mockUsers.where((u) => u['id'] == koordinatorId).toList();
+      if (coord.isNotEmpty) {
+        _mockUsers[idx]['koordinator_name'] = coord.first['name'];
+      }
+    }
+    _mockUsers[idx]['_persist_locally'] = true;
+    await _saveMockUsers();
+
+    final updated = UserModel.fromJson(_mockUsers[idx]);
+    await _syncLocalSessionIfSameUser(updated);
+    return updated;
+  }
+
+  Future<UserModel> updateMembershipStatus({
+    required int targetUserId,
+    required UserModel actor,
+    required String membershipStatus,
+    required String reason,
+  }) async {
+    if (!actor.isManager) {
+      throw Exception('Akses ditolak: Hanya Admin dan Owner yang berhak mengubah status keanggotaan.');
+    }
+    if (actor.id == targetUserId) {
+      throw Exception('Anda tidak dapat mengubah status keanggotaan akun Anda sendiri.');
+    }
+    final nextStatus = membershipStatus.trim().toLowerCase();
+    if (!['aktif', 'nonaktif', 'ditangguhkan'].contains(nextStatus)) {
+      throw Exception('Status keanggotaan tidak valid.');
+    }
+
+    if (!shouldUseMock) {
+      try {
+        final token = await _sessionService.getToken();
+        final response = await requestWithFailover(
+          (base) => http
+              .patch(
+                Uri.parse('$base/users/$targetUserId/membership-status'),
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Accept': 'application/json',
+                  if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+                },
+                body: jsonEncode({
+                  'actor_id': actor.id,
+                  'actor_email': actor.email,
+                  'membership_status': nextStatus,
+                  'reason': reason.trim(),
+                }),
+              )
+              .timeout(const Duration(seconds: 6)),
+        );
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          final updated = UserModel.fromJson(Map<String, dynamic>.from(data['user']));
+          await _syncLocalMockUser(updated);
+          return updated;
+        } else {
+          final errBody = jsonDecode(response.body);
+          throw Exception(errBody['message'] ?? 'Gagal mengubah status keanggotaan.');
+        }
+      } catch (e) {
+        if (e.toString().contains('Akses ditolak') || e.toString().contains('tidak dapat')) {
+          rethrow;
+        }
+      }
+    }
+
+    await _ensureMockUsersLoaded();
+    final idx = _mockUsers.indexWhere((u) => u['id'] == targetUserId);
+    if (idx == -1) {
+      throw Exception('Data anggota tidak ditemukan.');
+    }
+    final oldStatus = _mockUsers[idx]['membership_status']?.toString() ??
+        ((_mockUsers[idx]['is_active'] == 1 || _mockUsers[idx]['is_active'] == true) ? 'aktif' : 'nonaktif');
+
+    _mockUsers[idx]['membership_status'] = nextStatus;
+    _mockUsers[idx]['is_active'] = nextStatus == 'aktif' ? 1 : 0;
+    _mockUsers[idx]['_persist_locally'] = true;
+    await _saveMockUsers();
+
+    final logEntry = MembershipStatusLog(
+      id: _mockStatusLogs.length + 1,
+      userId: targetUserId,
+      oldStatus: oldStatus,
+      newStatus: nextStatus,
+      reason: reason.trim().isNotEmpty ? reason.trim() : 'Perubahan status menjadi $nextStatus',
+      changedByName: actor.name,
+      createdAt: DateTime.now(),
+    );
+    _mockStatusLogs.insert(0, logEntry);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _mockStatusLogsKey,
+        jsonEncode(_mockStatusLogs.map((e) => e.toJson()).toList()),
+      );
+    } catch (_) {}
+
+    return UserModel.fromJson(_mockUsers[idx]);
+  }
+
+  Future<List<MembershipStatusLog>> getMembershipStatusHistory(int userId) async {
+    if (!shouldUseMock) {
+      try {
+        final response = await requestWithFailover(
+          (base) => http
+              .get(
+                Uri.parse('$base/users/$userId/status-history'),
+                headers: {'Accept': 'application/json'},
+              )
+              .timeout(const Duration(seconds: 5)),
+        );
+        if (response.statusCode == 200) {
+          final body = jsonDecode(response.body);
+          final list = body['data'] as List<dynamic>? ?? [];
+          return list
+              .map((e) => MembershipStatusLog.fromJson(Map<String, dynamic>.from(e as Map)))
+              .toList();
+        }
+      } catch (_) {}
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_mockStatusLogsKey);
+      if (raw != null && raw.isNotEmpty && _mockStatusLogs.isEmpty) {
+        final decoded = jsonDecode(raw) as List<dynamic>;
+        _mockStatusLogs.addAll(
+          decoded.map((e) => MembershipStatusLog.fromJson(Map<String, dynamic>.from(e as Map))),
+        );
+      }
+    } catch (_) {}
+    return _mockStatusLogs.where((l) => l.userId == userId).toList();
+  }
+
+  Future<void> _syncLocalMockUser(UserModel updated) async {
+    await _ensureMockUsersLoaded();
+    final idx = _mockUsers.indexWhere((u) => u['id'] == updated.id);
+    if (idx != -1) {
+      _mockUsers[idx] = {
+        ..._mockUsers[idx],
+        ...updated.toJson(),
+        '_persist_locally': true,
+      };
+      await _saveMockUsers();
+    }
+    await _syncLocalSessionIfSameUser(updated);
+  }
+
+  Future<void> _syncLocalSessionIfSameUser(UserModel updated) async {
+    final currentCached = await _sessionService.getUser();
+    if (currentCached != null &&
+        (currentCached.id == updated.id ||
+            currentCached.email.toLowerCase() == updated.email.toLowerCase())) {
+      final token = await _sessionService.getToken() ?? 'active_token_${updated.id}';
+      await _sessionService.saveSession(
+        AuthResponseModel(token: token, user: updated),
+      );
+    }
   }
 
   // ============================================================
