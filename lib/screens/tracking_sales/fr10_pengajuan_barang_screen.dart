@@ -15,7 +15,8 @@ class FR10PengajuanBarangScreen extends StatefulWidget {
   const FR10PengajuanBarangScreen({Key? key}) : super(key: key);
 
   @override
-  State<FR10PengajuanBarangScreen> createState() => _FR10PengajuanBarangScreenState();
+  State<FR10PengajuanBarangScreen> createState() =>
+      _FR10PengajuanBarangScreenState();
 }
 
 class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
@@ -24,9 +25,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
   bool _isLoading = false;
   bool _isSubmitting = false;
 
-  String _selectedStatusFilter = 'Semua'; // 'Semua', 'Menunggu', 'Disetujui', 'Ditolak'
+  String _selectedStatusFilter = 'Semua';
 
-  // State Form "Ajukan Pengajuan Barang" (Tampil melalui Pop-up Modal)
   final _formKey = GlobalKey<FormState>();
   final _dialogFormKey = GlobalKey<FormState>();
   int? _selectedProductId;
@@ -76,13 +76,16 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     final cachedReqs = await InventoryService.loadCachedRequests();
     final initialFilteredReqs = isManager
         ? cachedReqs
-        : (salesId != null ? cachedReqs.where((r) => r.salesId == salesId).toList() : cachedReqs);
+        : (salesId != null
+            ? cachedReqs.where((r) => r.salesId == salesId).toList()
+            : cachedReqs);
 
     if (mounted) {
       setState(() {
         _products = cachedProds;
         _requests = initialFilteredReqs;
-        if (_products.isNotEmpty && !_products.any((p) => p.id == _selectedProductId)) {
+        if (_products.isNotEmpty &&
+            !_products.any((p) => p.id == _selectedProductId)) {
           _selectedProductId = _products.first.id;
         }
       });
@@ -93,15 +96,21 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final fetchedProds = await InventoryService.fetchProducts(salesId: user?.id);
-      final fetchedReqs = await InventoryService.fetchStockRequests(salesId: salesId);
+      final fetchedProds =
+          await InventoryService.fetchProducts(salesId: user?.id);
+      final fetchedReqs =
+          await InventoryService.fetchStockRequests(salesId: salesId);
       if (mounted) {
         setState(() {
           _products = fetchedProds;
           _requests = fetchedReqs;
-          if (!_products.any((p) => p.id == _selectedProductId) && _products.isNotEmpty) {
-            final plastik = _products.where((p) => p.kategori.toLowerCase() == 'plastik').toList();
-            _selectedProductId = plastik.isNotEmpty ? plastik.first.id : _products.first.id;
+          if (!_products.any((p) => p.id == _selectedProductId) &&
+              _products.isNotEmpty) {
+            final plastik = _products
+                .where((p) => p.kategori.toLowerCase() == 'plastik')
+                .toList();
+            _selectedProductId =
+                plastik.isNotEmpty ? plastik.first.id : _products.first.id;
           }
         });
       }
@@ -111,12 +120,10 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     }
   }
 
-  // ============================================================
-  // KIRIM PENGAJUAN BARANG BARU / STOK OLEH SALES
-  // ============================================================
   Future<void> _submitStockRequest({bool closeDialogOnSuccess = false}) async {
-    final activeFormState =
-        closeDialogOnSuccess ? _dialogFormKey.currentState : _formKey.currentState;
+    final activeFormState = closeDialogOnSuccess
+        ? _dialogFormKey.currentState
+        : _formKey.currentState;
     if (activeFormState != null && !activeFormState.validate()) return;
 
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
@@ -147,7 +154,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       return;
     }
 
-    // Alasan hanya wajib dan divalidasi pada retur barang
     final String alasanText = _selectedJenis == JenisPengajuanStok.retur
         ? _alasanCtrl.text.trim()
         : (_alasanCtrl.text.trim().isNotEmpty
@@ -183,7 +189,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     ];
     final formattedDate = '${now.day} ${months[now.month - 1]} ${now.year}';
     final allReqs = await InventoryService.loadCachedRequests();
-    final nextId = (allReqs.isEmpty ? 1 : allReqs.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1);
+    final nextId = (allReqs.isEmpty
+        ? 1
+        : allReqs.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1);
 
     StockRequestItem newReq = StockRequestItem(
       id: nextId,
@@ -206,7 +214,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       status: StatusPengajuanStok.menunggu,
     );
 
-    // 1. Simpan segera ke cache statis & memory lokal agar instan terlihat bagi Sales, Admin, dan Owner
     allReqs.removeWhere((r) => r.id == newReq.id);
     allReqs.insert(0, newReq);
     await InventoryService.saveCachedRequests(allReqs);
@@ -245,7 +252,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       );
     }
 
-    // 2. Sinkronkan ke Backend MySQL secara asinkron tanpa memblokir interaksi pengguna
     if (!InventoryService.isTestEnv) {
       try {
         await AuthService.resolveBaseUrl();
@@ -275,9 +281,12 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
         if (response.statusCode == 201 || response.statusCode == 200) {
           final body = jsonDecode(response.body);
           if (body['data'] != null) {
-            final serverReq = StockRequestItem.fromJson(Map<String, dynamic>.from(body['data']));
+            final serverReq = StockRequestItem.fromJson(
+                Map<String, dynamic>.from(body['data']));
             final currentReqs = await InventoryService.loadCachedRequests();
-            final sIdx = currentReqs.indexWhere((r) => r.id == newReq.id || r.kodePengajuan == newReq.kodePengajuan);
+            final sIdx = currentReqs.indexWhere((r) =>
+                r.id == newReq.id ||
+                r.kodePengajuan == newReq.kodePengajuan);
             if (sIdx != -1) {
               currentReqs[sIdx] = serverReq;
             } else {
@@ -286,7 +295,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
             await InventoryService.saveCachedRequests(currentReqs);
             if (mounted) {
               setState(() {
-                final localIdx = _requests.indexWhere((r) => r.id == newReq.id || r.kodePengajuan == newReq.kodePengajuan);
+                final localIdx = _requests.indexWhere((r) =>
+                    r.id == newReq.id ||
+                    r.kodePengajuan == newReq.kodePengajuan);
                 if (localIdx != -1) {
                   _requests[localIdx] = serverReq;
                 }
@@ -298,9 +309,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     }
   }
 
-  // ============================================================
-  // PROSES APPROVAL / PENOLAKAN OLEH ADMIN & OWNER
-  // ============================================================
   Future<void> _approveRequestByManager(
     StockRequestItem item, {
     int? customApprovedQty,
@@ -319,14 +327,12 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
         ? adminNote.trim()
         : 'Disetujui oleh $reviewerDisplay. Stok telah diperbarui pada sistem.';
 
-    // 1. Update lokal: produk & stok
     setState(() {
       item.status = StatusPengajuanStok.disetujui;
       item.qtyDisetujui = finalApprovedQty;
       item.catatanAdmin = finalNote;
       item.diprosesOleh = reviewerDisplay;
 
-      // Cek apakah produk sudah ada di _products
       int prodIdx = _products.indexWhere(
         (p) =>
             (item.productId != null && p.id == item.productId) ||
@@ -334,7 +340,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       );
 
       if (prodIdx == -1) {
-        // Barang baru yang diajukan sales -> otomatis masuk ke tabel products saat disetujui!
         final newProdId = _products.isEmpty
             ? 1
             : (_products.map((e) => e.id).reduce((a, b) => a > b ? a : b) + 1);
@@ -345,7 +350,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               : 'BRG-${newProdId.toString().padLeft(3, '0')}',
           namaBarang: item.namaBarang,
           kategori: item.kategori,
-          deskripsi: 'Produk ditambahkan dari pengajuan stok sales (${item.alasan})',
+          deskripsi:
+              'Produk ditambahkan dari pengajuan stok sales (${item.alasan})',
           satuan: item.satuan,
           stokGudang: extraWarehouseStock > 0 ? extraWarehouseStock : 50,
           stokSales: finalApprovedQty,
@@ -388,13 +394,13 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     }
     await InventoryService.saveCachedRequests(allReqs);
 
-    // 2. Sinkronkan ke Backend MySQL
     if (!InventoryService.isTestEnv) {
       try {
         await AuthService.resolveBaseUrl();
         final response = await http
             .put(
-              Uri.parse('${AuthService.activeBaseUrl}/stock-requests/${item.id}/status'),
+              Uri.parse(
+                  '${AuthService.activeBaseUrl}/stock-requests/${item.id}/status'),
               headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
@@ -436,7 +442,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     );
   }
 
-  Future<void> _rejectRequestByManager(StockRequestItem item, String reason) async {
+  Future<void> _rejectRequestByManager(
+      StockRequestItem item, String reason) async {
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final currentUser = authProvider.currentUser;
     final reviewerRole = (currentUser?.isSuperAdmin == true) ? 'Owner' : 'Admin';
@@ -444,8 +451,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
         ? '${currentUser.name} ($reviewerRole)'
         : reviewerRole;
 
-    final finalReason =
-        reason.trim().isNotEmpty ? reason.trim() : 'Pengajuan stok ditolak oleh $reviewerDisplay.';
+    final finalReason = reason.trim().isNotEmpty
+        ? reason.trim()
+        : 'Pengajuan stok ditolak oleh $reviewerDisplay.';
 
     setState(() {
       item.status = StatusPengajuanStok.ditolak;
@@ -468,7 +476,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
         await AuthService.resolveBaseUrl();
         await http
             .put(
-              Uri.parse('${AuthService.activeBaseUrl}/stock-requests/${item.id}/status'),
+              Uri.parse(
+                  '${AuthService.activeBaseUrl}/stock-requests/${item.id}/status'),
               headers: {
                 'Content-Type': 'application/json',
                 'Accept': 'application/json',
@@ -502,6 +511,89 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     );
   }
 
+  void _showRejectDialog(StockRequestItem item) {
+    final reasonCtrl = TextEditingController();
+    final rejectFormKey = GlobalKey<FormState>();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.cancel_rounded, color: Color(0xFFDC2626)),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Tolak Pengajuan Barang',
+                style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.bold,
+                    color: kTextColor),
+              ),
+            ),
+          ],
+        ),
+        content: Form(
+          key: rejectFormKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Masukkan alasan penolakan untuk pengajuan "${item.namaBarang}" (${item.qtyDiajukan} ${item.satuan}) dari ${item.salesName}:',
+                style: const TextStyle(fontSize: 13, color: kTextColor),
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: reasonCtrl,
+                maxLines: 3,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Alasan Penolakan *',
+                  hintText:
+                      'Contoh: Stok gudang kosong atau kuota pengajuan melebihi batas...',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                validator: (val) {
+                  if (val == null || val.trim().isEmpty) {
+                    return 'Alasan penolakan wajib diisi';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal', style: TextStyle(color: kSecondaryColor)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFDC2626),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              if (!rejectFormKey.currentState!.validate()) return;
+              Navigator.pop(ctx);
+              _rejectRequestByManager(item, reasonCtrl.text.trim());
+            },
+            child: const Text(
+              'Tolak Pengajuan',
+              style:
+                  TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _deleteRequest(StockRequestItem item) async {
     setState(() {
       _requests.removeWhere((r) => r.id == item.id);
@@ -514,7 +606,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       try {
         await AuthService.resolveBaseUrl();
         await http
-            .delete(Uri.parse('${AuthService.activeBaseUrl}/stock-requests/${item.id}'))
+            .delete(Uri.parse(
+                '${AuthService.activeBaseUrl}/stock-requests/${item.id}'))
             .timeout(const Duration(seconds: 4));
       } catch (_) {}
     }
@@ -528,10 +621,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     );
   }
 
-  // ============================================================
-  // DIALOG DETAIL & APPROVAL PENGAJUAN STOK
-  // ============================================================
-  void _showDetailAndActionDialog(StockRequestItem item, {required bool isManager}) {
+  void _showDetailAndActionDialog(StockRequestItem item,
+      {required bool isManager}) {
     final qtyApproveCtrl = TextEditingController(
       text: (item.qtyDisetujui ?? item.qtyDiajukan).toString(),
     );
@@ -553,7 +644,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
             const SizedBox(width: 10),
             Expanded(
               child: Text(
-                isManager ? 'Penerimaan & Verifikasi Pengajuan Barang' : 'Detail Pengajuan Barang',
+                isManager
+                    ? 'Penerimaan & Verifikasi Pengajuan Barang'
+                    : 'Detail Pengajuan Barang',
                 style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.bold,
@@ -576,7 +669,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               children: [
                 const Divider(),
                 const SizedBox(height: 8),
-                // Ringkasan Barang
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -616,8 +708,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Kode: ${item.kodeBarang} â€¢ Pengaju: ${item.salesName}',
-                              style: const TextStyle(fontSize: 12, color: kSecondaryColor),
+                              'Kode: ${item.kodeBarang} • Pengaju: ${item.salesName}',
+                              style: const TextStyle(
+                                  fontSize: 12, color: kSecondaryColor),
                             ),
                           ],
                         ),
@@ -627,8 +720,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   ),
                 ),
                 const SizedBox(height: 14),
-
-                // Detail Angka
                 LayoutBuilder(
                   builder: (context, constraints) {
                     if (constraints.maxWidth < 380) {
@@ -691,7 +782,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   },
                 ),
                 const SizedBox(height: 12),
-
                 Row(
                   children: [
                     Expanded(
@@ -710,10 +800,12 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   ],
                 ),
                 const SizedBox(height: 14),
-
                 const Text(
                   'Alasan Pengajuan Sales:',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: kTextColor),
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: kTextColor),
                 ),
                 const SizedBox(height: 6),
                 Container(
@@ -726,33 +818,46 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   ),
                   child: Text(
                     item.alasan,
-                    style: const TextStyle(fontSize: 13, color: kTextColor, height: 1.4),
+                    style: const TextStyle(
+                        fontSize: 13, color: kTextColor, height: 1.4),
                   ),
                 ),
-
-                if (item.catatanAdmin != null && item.catatanAdmin!.isNotEmpty) ...[
+                if (item.catatanAdmin != null &&
+                    item.catatanAdmin!.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   const Text(
                     'Catatan Admin / Owner:',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: kTextColor),
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        color: kTextColor),
                   ),
                   const SizedBox(height: 6),
                   Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: item.status == StatusPengajuanStok.ditolak
+                          ? const Color(0xFFFEF2F2)
+                          : const Color(0xFFEFF6FF),
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(
+                        color: item.status == StatusPengajuanStok.ditolak
+                            ? const Color(0xFFFECACA)
+                            : const Color(0xFFBFDBFE),
+                      ),
                     ),
                     child: Text(
                       item.catatanAdmin!,
-                      style: const TextStyle(fontSize: 12.5, color: Color(0xFF1E40AF)),
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: item.status == StatusPengajuanStok.ditolak
+                            ? const Color(0xFFB91C1C)
+                            : const Color(0xFF1E40AF),
+                      ),
                     ),
                   ),
                 ],
-
-                // Form Kontrol Persetujuan & Penambahan Stok untuk Admin / Owner
                 if (isManager) ...[
                   const SizedBox(height: 18),
                   const Divider(),
@@ -774,9 +879,10 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           keyboardType: TextInputType.number,
                           decoration: InputDecoration(
                             labelText: 'Jumlah Disetujui (${item.satuan})',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 12),
                           ),
                         ),
                       ),
@@ -788,9 +894,10 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           decoration: InputDecoration(
                             labelText: 'Tambah Stok Gudang (+)',
                             hintText: 'Opsional restock',
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                            contentPadding:
-                                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 12),
                           ),
                         ),
                       ),
@@ -801,9 +908,11 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     controller: noteCtrl,
                     maxLines: 2,
                     decoration: InputDecoration(
-                      labelText: 'Catatan Persetujuan / Penolakan',
-                      hintText: 'Masukkan catatan untuk sales...',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                      labelText: 'Catatan (Wajib diisi jika menolak)',
+                      hintText:
+                          'Masukkan catatan persetujuan atau alasan penolakan...',
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10)),
                       contentPadding: const EdgeInsets.all(12),
                     ),
                   ),
@@ -824,11 +933,23 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: const Color(0xFFDC2626),
                 side: const BorderSide(color: Color(0xFFDC2626)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
               onPressed: () {
+                if (noteCtrl.text.trim().isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                          'Harap isi alasan penolakan pada kolom catatan terlebih dahulu.'),
+                      backgroundColor: Color(0xFFDC2626),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  return;
+                }
                 Navigator.pop(ctx);
-                _rejectRequestByManager(item, noteCtrl.text);
+                _rejectRequestByManager(item, noteCtrl.text.trim());
               },
               icon: const Icon(Icons.close, size: 17),
               label: const Text('Tolak Pengajuan'),
@@ -836,13 +957,17 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF15803D),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
               onPressed: () {
                 Navigator.pop(ctx);
-                final approvedQty = int.tryParse(qtyApproveCtrl.text.trim()) ?? item.qtyDiajukan;
-                final extraGudang = int.tryParse(restockGudangCtrl.text.trim()) ?? 0;
+                final approvedQty =
+                    int.tryParse(qtyApproveCtrl.text.trim()) ?? item.qtyDiajukan;
+                final extraGudang =
+                    int.tryParse(restockGudangCtrl.text.trim()) ?? 0;
                 _approveRequestByManager(
                   item,
                   customApprovedQty: approvedQty,
@@ -850,10 +975,12 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   adminNote: noteCtrl.text,
                 );
               },
-              icon: const Icon(Icons.check_circle_outline, color: Colors.white, size: 18),
-              label: Text(
-                isManager ? 'Terima & Update Stok' : 'Setujui & Update Stok',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              icon: const Icon(Icons.check_circle_outline,
+                  color: Colors.white, size: 18),
+              label: const Text(
+                'Terima & Update Stok',
+                style:
+                    TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -897,15 +1024,13 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     );
   }
 
-  // ============================================================
-  // DIALOG MODAL "+ AJUKAN PENGAJUAN" (UNTUK TAMPILAN MOBILE/MODAL)
-  // ============================================================
   void _openAjukanPengajuanModal() {
     setState(() {
       _selectedJenis = JenisPengajuanStok.tambah;
       _qtyCtrl.clear();
       _alasanCtrl.clear();
-      if (_products.isNotEmpty && !_products.any((p) => p.id == _selectedProductId)) {
+      if (_products.isNotEmpty &&
+          !_products.any((p) => p.id == _selectedProductId)) {
         _selectedProductId = _products.first.id;
       }
     });
@@ -915,7 +1040,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 820),
             child: SingleChildScrollView(
@@ -976,7 +1102,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: kPrimaryColor),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: kPrimaryColor),
                   )
                 : const Icon(Icons.refresh_rounded, color: kTextColor),
           ),
@@ -1016,9 +1143,13 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
 
   Widget _buildManagerStatsCards(UserModel? user) {
     final total = _requests.length;
-    final pending = _requests.where((r) => r.status == StatusPengajuanStok.menunggu).length;
-    final approved = _requests.where((r) => r.status == StatusPengajuanStok.disetujui).length;
-    final rejected = _requests.where((r) => r.status == StatusPengajuanStok.ditolak).length;
+    final pending =
+        _requests.where((r) => r.status == StatusPengajuanStok.menunggu).length;
+    final approved = _requests
+        .where((r) => r.status == StatusPengajuanStok.disetujui)
+        .length;
+    final rejected =
+        _requests.where((r) => r.status == StatusPengajuanStok.ditolak).length;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1183,8 +1314,10 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
   }
 
   Widget _buildSalesProfileBanner(UserModel? user, bool isManager) {
-    final userName = (user?.name.isNotEmpty == true) ? user!.name : 'Sales Aktif';
-    final userEmail = (user?.email.isNotEmpty == true) ? user!.email : 'CV Maju Bersama';
+    final userName =
+        (user?.name.isNotEmpty == true) ? user!.name : 'Sales Aktif';
+    final userEmail =
+        (user?.email.isNotEmpty == true) ? user!.email : 'CV Maju Bersama';
     final roleTitle = user?.roleDisplayTitle ?? 'Sales Lapangan';
     final profileLabel = _profileLabelForRole(user);
     final roleColor = _rolePrimaryColor(user);
@@ -1241,7 +1374,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                         ),
                       ),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 3),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(20),
@@ -1281,7 +1415,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.account_circle_outlined, size: 16, color: Colors.white),
+                  const Icon(Icons.account_circle_outlined,
+                      size: 16, color: Colors.white),
                   const SizedBox(width: 6),
                   Text(
                     profileLabel,
@@ -1311,7 +1446,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
   }
 
   void _showSalesProfilePopup(UserModel? user, bool isManager) {
-    final userName = (user?.name.isNotEmpty == true) ? user!.name : 'Sales Aktif';
+    final userName =
+        (user?.name.isNotEmpty == true) ? user!.name : 'Sales Aktif';
     final userEmail = (user?.email.isNotEmpty == true) ? user!.email : '-';
     final userPhone = (user?.phone?.isNotEmpty == true) ? user!.phone! : '-';
     final roleTitle = user?.roleDisplayTitle ?? 'Sales Lapangan';
@@ -1402,12 +1538,14 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.email_outlined, size: 16, color: kSecondaryColor),
+                      const Icon(Icons.email_outlined,
+                          size: 16, color: kSecondaryColor),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           userEmail,
-                          style: const TextStyle(fontSize: 12.5, color: kTextColor),
+                          style: const TextStyle(
+                              fontSize: 12.5, color: kTextColor),
                         ),
                       ),
                     ],
@@ -1415,12 +1553,14 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.phone_outlined, size: 16, color: kSecondaryColor),
+                      const Icon(Icons.phone_outlined,
+                          size: 16, color: kSecondaryColor),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           userPhone,
-                          style: const TextStyle(fontSize: 12.5, color: kTextColor),
+                          style: const TextStyle(
+                              fontSize: 12.5, color: kTextColor),
                         ),
                       ),
                     ],
@@ -1439,7 +1579,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
               backgroundColor: roleColor,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
             ),
             onPressed: () {
               Navigator.pop(ctx);
@@ -1448,18 +1589,18 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 MaterialPageRoute(builder: (_) => const FR11ProfilScreen()),
               );
             },
-            icon: const Icon(Icons.person_outline, size: 17, color: Colors.white),
-            label: const Text('Profil Saya', style: TextStyle(color: Colors.white)),
+            icon: const Icon(Icons.person_outline,
+                size: 17, color: Colors.white),
+            label: const Text('Profil Saya',
+                style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
   }
 
-  // ============================================================
-  // KARTU TABEL "PENGAJUAN STOK" (RESPONSIVE MOBILE & DESKTOP)
-  // ============================================================
-  Widget _buildPengajuanTableCard(List<StockRequestItem> filteredRequests, bool isManager) {
+  Widget _buildPengajuanTableCard(
+      List<StockRequestItem> filteredRequests, bool isManager) {
     final user = context.read<AuthProvider>().currentUser;
     final roleColor = _rolePrimaryColor(user);
     final roleBgColor = _roleLightColor(user);
@@ -1485,7 +1626,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header Card: Icon + Title + "+ Ajukan Pengajuan" Button
               Wrap(
                 spacing: 12,
                 runSpacing: 12,
@@ -1502,7 +1642,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
-                          isManager ? Icons.fact_check_outlined : Icons.inventory_2_outlined,
+                          isManager
+                              ? Icons.fact_check_outlined
+                              : Icons.inventory_2_outlined,
                           color: roleColor,
                           size: 24,
                         ),
@@ -1510,7 +1652,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                       const SizedBox(width: 12),
                       Flexible(
                         child: Text(
-                          isManager ? 'Penerimaan Pengajuan Barang' : 'Pengajuan Stok',
+                          isManager
+                              ? 'Penerimaan Pengajuan Barang'
+                              : 'Pengajuan Stok',
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
@@ -1526,11 +1670,14 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                         backgroundColor: roleColor,
                         foregroundColor: Colors.white,
                         elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
                       ),
                       onPressed: _openAjukanPengajuanModal,
-                      icon: const Icon(Icons.add, size: 18, color: Colors.white),
+                      icon:
+                          const Icon(Icons.add, size: 18, color: Colors.white),
                       label: const Text(
                         'Ajukan Barang',
                         style: TextStyle(
@@ -1542,27 +1689,31 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     ),
                 ],
               ),
-
               const SizedBox(height: 18),
-
-              // Filter Pills: Semua, Menunggu, Disetujui, Ditolak
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
-                  children: ['Semua', 'Menunggu', 'Disetujui', 'Ditolak'].map((tab) {
+                  children:
+                      ['Semua', 'Menunggu', 'Disetujui', 'Ditolak'].map((tab) {
                     final bool active = _selectedStatusFilter == tab;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(24),
-                        onTap: () => setState(() => _selectedStatusFilter = tab),
+                        onTap: () =>
+                            setState(() => _selectedStatusFilter = tab),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 8),
                           decoration: BoxDecoration(
-                            color: active ? roleColor : const Color(0xFFF1F5F9),
+                            color: active
+                                ? roleColor
+                                : const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(24),
                             border: Border.all(
-                              color: active ? roleColor : const Color(0xFFE2E8F0),
+                              color: active
+                                  ? roleColor
+                                  : const Color(0xFFE2E8F0),
                             ),
                           ),
                           child: Text(
@@ -1570,7 +1721,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                             style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
-                              color: active ? Colors.white : const Color(0xFF475569),
+                              color: active
+                                  ? Colors.white
+                                  : const Color(0xFF475569),
                             ),
                           ),
                         ),
@@ -1579,13 +1732,11 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   }).toList(),
                 ),
               ),
-
               const SizedBox(height: 16),
-
               if (!isMobile) ...[
-                // Header Tabel Desktop/Tablet
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(10),
@@ -1676,19 +1827,20 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 ),
                 const SizedBox(height: 4),
               ],
-
               if (filteredRequests.isEmpty)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 32),
                   child: Center(
                     child: Column(
                       children: [
-                        Icon(Icons.inbox_outlined, size: 42, color: Colors.grey.shade400),
+                        Icon(Icons.inbox_outlined,
+                            size: 42, color: Colors.grey.shade400),
                         const SizedBox(height: 8),
                         const Text(
                           'Belum ada data pengajuan stok pada filter ini.',
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: kSecondaryColor, fontSize: 13),
+                          style:
+                              TextStyle(color: kSecondaryColor, fontSize: 13),
                         ),
                       ],
                     ),
@@ -1710,7 +1862,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: filteredRequests.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, color: Color(0xFFE2E8F0)),
                   itemBuilder: (context, index) {
                     final item = filteredRequests[index];
                     return _buildRequestRow(index + 1, item, isManager);
@@ -1723,7 +1876,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     );
   }
 
-  Widget _buildMobileRequestCard(int rowNum, StockRequestItem item, bool isManager) {
+  Widget _buildMobileRequestCard(
+      int rowNum, StockRequestItem item, bool isManager) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1744,7 +1898,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   border: Border.all(color: const Color(0xFFCBD5E1)),
                 ),
                 child: Text(
-                  '#$rowNum â€¢ ${item.tanggalPengajuan}',
+                  '#$rowNum • ${item.tanggalPengajuan}',
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
@@ -1759,7 +1913,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 width: 28,
                 height: 28,
                 child: PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, size: 18, color: Color(0xFF64748B)),
+                  icon: const Icon(Icons.more_vert,
+                      size: 18, color: Color(0xFF64748B)),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   onSelected: (val) {
@@ -1768,10 +1923,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     } else if (val == 'approve') {
                       _approveRequestByManager(item);
                     } else if (val == 'reject') {
-                      _rejectRequestByManager(
-                        item,
-                        'Ditolak oleh manajemen melalui aksi cepat.',
-                      );
+                      _showRejectDialog(item);
                     } else if (val == 'delete') {
                       _deleteRequest(item);
                     }
@@ -1781,18 +1933,21 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                       value: 'detail',
                       child: Row(
                         children: [
-                          Icon(Icons.visibility_outlined, size: 18, color: Color(0xFF1D4ED8)),
+                          Icon(Icons.visibility_outlined,
+                              size: 18, color: Color(0xFF1D4ED8)),
                           SizedBox(width: 8),
                           Text('Lihat Detail'),
                         ],
                       ),
                     ),
-                    if (isManager && item.status != StatusPengajuanStok.disetujui)
+                    if (isManager &&
+                        item.status != StatusPengajuanStok.disetujui)
                       const PopupMenuItem(
                         value: 'approve',
                         child: Row(
                           children: [
-                            Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF15803D)),
+                            Icon(Icons.check_circle_outline,
+                                size: 18, color: Color(0xFF15803D)),
                             SizedBox(width: 8),
                             Text('Setujui & Tambah Stok'),
                           ],
@@ -1803,18 +1958,21 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                         value: 'reject',
                         child: Row(
                           children: [
-                            Icon(Icons.cancel_outlined, size: 18, color: Color(0xFFDC2626)),
+                            Icon(Icons.cancel_outlined,
+                                size: 18, color: Color(0xFFDC2626)),
                             SizedBox(width: 8),
                             Text('Tolak Pengajuan'),
                           ],
                         ),
                       ),
-                    if (item.status == StatusPengajuanStok.menunggu || isManager)
+                    if (item.status == StatusPengajuanStok.menunggu ||
+                        isManager)
                       const PopupMenuItem(
                         value: 'delete',
                         child: Row(
                           children: [
-                            Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                            Icon(Icons.delete_outline,
+                                size: 18, color: Colors.redAccent),
                             SizedBox(width: 8),
                             Text('Hapus Pengajuan'),
                           ],
@@ -1851,9 +2009,10 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     const SizedBox(height: 2),
                     Text(
                       isManager
-                          ? '${item.kategori} â€¢ Oleh: ${item.salesName}'
+                          ? '${item.kategori} • Oleh: ${item.salesName}'
                           : 'Kategori: ${item.kategori}',
-                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                      style: const TextStyle(
+                          fontSize: 11.5, color: Color(0xFF64748B)),
                     ),
                   ],
                 ),
@@ -1891,18 +2050,40 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
-                    onPressed: () => _showDetailAndActionDialog(item, isManager: isManager),
+                    onPressed: () =>
+                        _showDetailAndActionDialog(item, isManager: isManager),
                     child: const Text(
                       'Lihat',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ),
               ],
             ),
           ),
+          if (item.catatanAdmin != null &&
+              item.catatanAdmin!.isNotEmpty &&
+              item.status == StatusPengajuanStok.ditolak) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Text(
+                'Alasan Penolakan: "${item.catatanAdmin}"',
+                style:
+                    const TextStyle(fontSize: 11.5, color: Color(0xFFB91C1C)),
+              ),
+            ),
+          ],
           if (isManager && item.status == StatusPengajuanStok.menunggu) ...[
             const SizedBox(height: 8),
             Row(
@@ -1913,16 +2094,15 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                       foregroundColor: const Color(0xFFDC2626),
                       side: const BorderSide(color: Color(0xFFFECACA)),
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
-                    onPressed: () => _rejectRequestByManager(
-                      item,
-                      'Pengajuan stok ditolak oleh Admin/Owner.',
-                    ),
+                    onPressed: () => _showRejectDialog(item),
                     icon: const Icon(Icons.close, size: 15),
                     label: const Text(
                       'Tolak',
-                      style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                          fontSize: 11.5, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
@@ -1933,10 +2113,12 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFF15803D),
                       padding: const EdgeInsets.symmetric(vertical: 8),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
                     ),
-                    onPressed: () => _showDetailAndActionDialog(item, isManager: isManager),
-                    icon: const Icon(Icons.check_circle_outline, size: 15, color: Colors.white),
+                    onPressed: () => _approveRequestByManager(item),
+                    icon: const Icon(Icons.check_circle_outline,
+                        size: 15, color: Colors.white),
                     label: const Text(
                       'Terima',
                       style: TextStyle(
@@ -1962,7 +2144,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
         children: [
           Row(
             children: [
-              // No
               SizedBox(
                 width: 28,
                 child: Text(
@@ -1974,8 +2155,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   ),
                 ),
               ),
-
-              // Tanggal Pengajuan
               Expanded(
                 flex: 3,
                 child: Column(
@@ -1992,13 +2171,12 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     if (isManager)
                       Text(
                         item.salesName,
-                        style: const TextStyle(fontSize: 10.5, color: kSecondaryColor),
+                        style: const TextStyle(
+                            fontSize: 10.5, color: kSecondaryColor),
                       ),
                   ],
                 ),
               ),
-
-              // Barang (Thumbnail + Kategori + Nama Barang)
               Expanded(
                 flex: 4,
                 child: Row(
@@ -2038,8 +2216,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   ],
                 ),
               ),
-
-              // Jenis Badge (Tambah / Kurang / Retur)
               Expanded(
                 flex: 2,
                 child: Align(
@@ -2047,8 +2223,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   child: _buildJenisBadge(item.jenis),
                 ),
               ),
-
-              // Jumlah (5 Pack)
               Expanded(
                 flex: 2,
                 child: Column(
@@ -2064,13 +2238,12 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     ),
                     Text(
                       item.satuan,
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      style: const TextStyle(
+                          fontSize: 11, color: Color(0xFF64748B)),
                     ),
                   ],
                 ),
               ),
-
-              // Status Badge (Menunggu / Disetujui / Ditolak)
               Expanded(
                 flex: 3,
                 child: Align(
@@ -2078,8 +2251,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   child: _buildStatusBadge(item.status),
                 ),
               ),
-
-              // Aksi (Terima, Tolak, Lihat / Verifikasi)
               SizedBox(
                 width: isManager ? 210 : 112,
                 child: FittedBox(
@@ -2088,24 +2259,30 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      if (isManager && item.status == StatusPengajuanStok.menunggu) ...[
+                      if (isManager &&
+                          item.status == StatusPengajuanStok.menunggu) ...[
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFF15803D),
                             foregroundColor: Colors.white,
                             elevation: 0,
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 7),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          onPressed: () => _showDetailAndActionDialog(item, isManager: isManager),
-                          icon: const Icon(Icons.check_circle_outline, size: 14, color: Colors.white),
+                          onPressed: () => _approveRequestByManager(item),
+                          icon: const Icon(Icons.check_circle_outline,
+                              size: 14, color: Colors.white),
                           label: const Text(
                             'Terima',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Colors.white),
+                            style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white),
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -2113,17 +2290,19 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                           style: OutlinedButton.styleFrom(
                             foregroundColor: const Color(0xFFDC2626),
                             side: const BorderSide(color: Color(0xFFFCA5A5)),
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 7),
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(8),
                             ),
                           ),
-                          onPressed: () => _rejectRequestByManager(item, 'Ditolak oleh manajemen.'),
+                          onPressed: () => _showRejectDialog(item),
                           child: const Text(
                             'Tolak',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                            style: TextStyle(
+                                fontSize: 11.5, fontWeight: FontWeight.w600),
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -2134,18 +2313,20 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                             style: OutlinedButton.styleFrom(
                               foregroundColor: const Color(0xFF1D4ED8),
                               side: const BorderSide(color: Color(0xFF93C5FD)),
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 10),
                               minimumSize: Size.zero,
                               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8),
                               ),
                             ),
-                            onPressed: () =>
-                                _showDetailAndActionDialog(item, isManager: isManager),
+                            onPressed: () => _showDetailAndActionDialog(item,
+                                isManager: isManager),
                             child: Text(
                               isManager ? 'Verifikasi' : 'Lihat',
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                  fontSize: 11.5, fontWeight: FontWeight.w600),
                             ),
                           ),
                         ),
@@ -2155,78 +2336,82 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                         width: 28,
                         height: 28,
                         child: PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert, size: 18, color: Color(0xFF64748B)),
+                          icon: const Icon(Icons.more_vert,
+                              size: 18, color: Color(0xFF64748B)),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                      onSelected: (val) {
-                        if (val == 'detail') {
-                          _showDetailAndActionDialog(item, isManager: isManager);
-                        } else if (val == 'approve') {
-                          _approveRequestByManager(item);
-                        } else if (val == 'reject') {
-                          _rejectRequestByManager(
-                            item,
-                            'Ditolak oleh manajemen melalui aksi cepat.',
-                          );
-                        } else if (val == 'delete') {
-                          _deleteRequest(item);
-                        }
-                      },
-                      itemBuilder: (ctx) => [
-                        const PopupMenuItem(
-                          value: 'detail',
-                          child: Row(
-                            children: [
-                              Icon(Icons.visibility_outlined, size: 18, color: Color(0xFF1D4ED8)),
-                              SizedBox(width: 8),
-                              Text('Lihat Detail'),
-                            ],
-                          ),
+                          onSelected: (val) {
+                            if (val == 'detail') {
+                              _showDetailAndActionDialog(item,
+                                  isManager: isManager);
+                            } else if (val == 'approve') {
+                              _approveRequestByManager(item);
+                            } else if (val == 'reject') {
+                              _showRejectDialog(item);
+                            } else if (val == 'delete') {
+                              _deleteRequest(item);
+                            }
+                          },
+                          itemBuilder: (ctx) => [
+                            const PopupMenuItem(
+                              value: 'detail',
+                              child: Row(
+                                children: [
+                                  Icon(Icons.visibility_outlined,
+                                      size: 18, color: Color(0xFF1D4ED8)),
+                                  SizedBox(width: 8),
+                                  Text('Lihat Detail'),
+                                ],
+                              ),
+                            ),
+                            if (isManager &&
+                                item.status != StatusPengajuanStok.disetujui)
+                              const PopupMenuItem(
+                                value: 'approve',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.check_circle_outline,
+                                        size: 18, color: Color(0xFF15803D)),
+                                    SizedBox(width: 8),
+                                    Text('Setujui & Tambah Stok'),
+                                  ],
+                                ),
+                              ),
+                            if (isManager &&
+                                item.status != StatusPengajuanStok.ditolak)
+                              const PopupMenuItem(
+                                value: 'reject',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.cancel_outlined,
+                                        size: 18, color: Color(0xFFDC2626)),
+                                    SizedBox(width: 8),
+                                    Text('Tolak Pengajuan'),
+                                  ],
+                                ),
+                              ),
+                            if (item.status == StatusPengajuanStok.menunggu ||
+                                isManager)
+                              const PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete_outline,
+                                        size: 18, color: Colors.redAccent),
+                                    SizedBox(width: 8),
+                                    Text('Hapus Pengajuan'),
+                                  ],
+                                ),
+                              ),
+                          ],
                         ),
-                        if (isManager && item.status != StatusPengajuanStok.disetujui)
-                          const PopupMenuItem(
-                            value: 'approve',
-                            child: Row(
-                              children: [
-                                Icon(Icons.check_circle_outline, size: 18, color: Color(0xFF15803D)),
-                                SizedBox(width: 8),
-                                Text('Setujui & Tambah Stok'),
-                              ],
-                            ),
-                          ),
-                        if (isManager && item.status != StatusPengajuanStok.ditolak)
-                          const PopupMenuItem(
-                            value: 'reject',
-                            child: Row(
-                              children: [
-                                Icon(Icons.cancel_outlined, size: 18, color: Color(0xFFDC2626)),
-                                SizedBox(width: 8),
-                                Text('Tolak Pengajuan'),
-                              ],
-                            ),
-                          ),
-                        if (item.status == StatusPengajuanStok.menunggu || isManager)
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Row(
-                              children: [
-                                Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
-                                SizedBox(width: 8),
-                                Text('Hapus Pengajuan'),
-                              ],
-                            ),
-                          ),
-                      ],
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
-
-          // Info Catatan / Alasan jika tersedia
           if (item.alasan.isNotEmpty) ...[
             const SizedBox(height: 8),
             Container(
@@ -2238,14 +2423,45 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, size: 15, color: Color(0xFF1D4ED8)),
+                  const Icon(Icons.info_outline,
+                      size: 15, color: Color(0xFF1D4ED8)),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       'Alasan: "${item.alasan}"',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+                      style: const TextStyle(
+                          fontSize: 11.5, color: Color(0xFF475569)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (item.catatanAdmin != null &&
+              item.catatanAdmin!.isNotEmpty &&
+              item.status == StatusPengajuanStok.ditolak) ...[
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.cancel_outlined,
+                      size: 15, color: Color(0xFFDC2626)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Alasan Penolakan: "${item.catatanAdmin}"',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 11.5, color: Color(0xFFB91C1C)),
                     ),
                   ),
                 ],
@@ -2337,9 +2553,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     );
   }
 
-  // ============================================================
-  // PANEL FORM "AJUKAN PENGAJUAN BARANG" + PREVIEW STOK SAAT INI (SESUAI GAMBAR KANAN ATAS)
-  // ============================================================
   Widget _buildAjukanPengajuanCombinedSection({
     required bool isInsideDialog,
     VoidCallback? onDialogStateChanged,
@@ -2410,7 +2623,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header "Ajukan Pengajuan Barang" + Close X
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -2425,7 +2637,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, size: 20, color: Color(0xFF64748B)),
+                  icon: const Icon(Icons.close,
+                      size: 20, color: Color(0xFF64748B)),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   onPressed: () {
@@ -2439,8 +2652,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
             const SizedBox(height: 10),
             const Divider(height: 1, color: Color(0xFFE2E8F0)),
             const SizedBox(height: 16),
-
-            // Label Pilih Barang *
             const Row(
               children: [
                 Text(
@@ -2451,12 +2662,12 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     color: Color(0xFF1E293B),
                   ),
                 ),
-                Text('*', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                Text('*',
+                    style: TextStyle(
+                        color: Colors.red, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 8),
-
-            // Dropdown ambil data barang yang sudah ditambah oleh owner/admin
             DropdownButtonFormField<int>(
               key: ValueKey('prod_$_selectedProductId'),
               initialValue: _products.any((p) => p.id == _selectedProductId)
@@ -2470,7 +2681,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               decoration: InputDecoration(
                 filled: true,
                 fillColor: const Color(0xFFF8FAFC),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
                   borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
@@ -2521,10 +2733,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 }
               },
             ),
-
             const SizedBox(height: 16),
-
-            // Jenis Pengajuan * (Pilihan kurang stok dihilangkan: hanya Tambah Stok & Retur Barang)
             const Row(
               children: [
                 Text(
@@ -2535,7 +2744,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     color: Color(0xFF1E293B),
                   ),
                 ),
-                Text('*', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                Text('*',
+                    style: TextStyle(
+                        color: Colors.red, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 8),
@@ -2555,10 +2766,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 ),
               ],
             ),
-
             const SizedBox(height: 16),
-
-            // Jumlah * (Input + Satuan Pack di kanan)
             const Row(
               children: [
                 Text(
@@ -2569,7 +2777,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                     color: Color(0xFF1E293B),
                   ),
                 ),
-                Text('*', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                Text('*',
+                    style: TextStyle(
+                        color: Colors.red, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 8),
@@ -2579,24 +2789,32 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   child: TextFormField(
                     controller: _qtyCtrl,
                     keyboardType: TextInputType.number,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.bold),
                     decoration: const InputDecoration(
                       hintText: '5',
                       filled: true,
                       fillColor: Colors.white,
-                      contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.horizontal(left: Radius.circular(10)),
+                        borderRadius:
+                            BorderRadius.horizontal(left: Radius.circular(10)),
                         borderSide: BorderSide(color: Color(0xFFCBD5E1)),
                       ),
                       enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.horizontal(left: Radius.circular(10)),
+                        borderRadius:
+                            BorderRadius.horizontal(left: Radius.circular(10)),
                         borderSide: BorderSide(color: Color(0xFFCBD5E1)),
                       ),
                     ),
                     validator: (v) {
-                      if (v == null || v.trim().isEmpty) return 'Jumlah wajib diisi';
-                      if ((int.tryParse(v.trim()) ?? 0) <= 0) return 'Minimal 1';
+                      if (v == null || v.trim().isEmpty) {
+                        return 'Jumlah wajib diisi';
+                      }
+                      if ((int.tryParse(v.trim()) ?? 0) <= 0) {
+                        return 'Minimal 1';
+                      }
                       return null;
                     },
                   ),
@@ -2607,7 +2825,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: const Color(0xFFF1F5F9),
-                    borderRadius: const BorderRadius.horizontal(right: Radius.circular(10)),
+                    borderRadius: const BorderRadius.horizontal(
+                        right: Radius.circular(10)),
                     border: Border.all(color: const Color(0xFFCBD5E1)),
                   ),
                   child: Text(
@@ -2621,8 +2840,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 ),
               ],
             ),
-
-            // Alasan * (Tampilan alasan HANYA muncul di retur barang)
             if (_selectedJenis == JenisPengajuanStok.retur) ...[
               const SizedBox(height: 16),
               const Row(
@@ -2635,7 +2852,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                       color: Color(0xFF1E293B),
                     ),
                   ),
-                  Text('*', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                  Text('*',
+                      style: TextStyle(
+                          color: Colors.red, fontWeight: FontWeight.bold)),
                 ],
               ),
               const SizedBox(height: 8),
@@ -2644,7 +2863,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 maxLines: 3,
                 style: const TextStyle(fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: 'Masukkan alasan retur barang (contoh: Kemasan rusak, kadaluarsa, dsb.)...',
+                  hintText:
+                      'Masukkan alasan retur barang (contoh: Kemasan rusak, kadaluarsa, dsb.)...',
                   filled: true,
                   fillColor: Colors.white,
                   contentPadding: const EdgeInsets.all(12),
@@ -2666,10 +2886,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                 },
               ),
             ],
-
             const SizedBox(height: 20),
-
-            // Tombol "Kirim Pengajuan"
             SizedBox(
               width: double.infinity,
               height: 46,
@@ -2678,18 +2895,22 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
                   backgroundColor: const Color(0xFF1D4ED8),
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
                 onPressed: _isSubmitting
                     ? null
-                    : () => _submitStockRequest(closeDialogOnSuccess: isInsideDialog),
+                    : () => _submitStockRequest(
+                        closeDialogOnSuccess: isInsideDialog),
                 icon: _isSubmitting
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white),
                       )
-                    : const Icon(Icons.send_rounded, size: 17, color: Colors.white),
+                    : const Icon(Icons.send_rounded,
+                        size: 17, color: Colors.white),
                 label: Text(
                   _isSubmitting ? 'Mengirim Pengajuan...' : 'Kirim Pengajuan',
                   style: const TextStyle(
@@ -2724,9 +2945,12 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              selected ? Icons.radio_button_checked : Icons.radio_button_off,
+              selected
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_off,
               size: 18,
-              color: selected ? const Color(0xFF1D4ED8) : const Color(0xFF94A3B8),
+              color:
+                  selected ? const Color(0xFF1D4ED8) : const Color(0xFF94A3B8),
             ),
             const SizedBox(width: 6),
             Text(
@@ -2734,7 +2958,9 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               style: TextStyle(
                 fontSize: 12.5,
                 fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-                color: selected ? const Color(0xFF0F172A) : const Color(0xFF475569),
+                color: selected
+                    ? const Color(0xFF0F172A)
+                    : const Color(0xFF475569),
               ),
             ),
           ],
@@ -2743,9 +2969,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
     );
   }
 
-  // ============================================================
-  // KARTU KANAN: PREVIEW BARANG + "STOK SAAT INI (DI SALES)" + "INFO"
-  // ============================================================
   Widget _buildStokSaatIniPreviewCard(ProductItem selectedProd) {
     return Container(
       decoration: BoxDecoration(
@@ -2764,7 +2987,6 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Gambar & Nama Barang
           Row(
             children: [
               ProductThumbnailWidget(
@@ -2801,10 +3023,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
-          // Kotak "Stok Saat Ini (di Sales)" = 2 Pack
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(16),
@@ -2846,10 +3065,7 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               ],
             ),
           ),
-
           const SizedBox(height: 14),
-
-          // Kotak "Info"
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(14),
@@ -2863,7 +3079,8 @@ class _FR10PengajuanBarangScreenState extends State<FR10PengajuanBarangScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.info_rounded, size: 17, color: Color(0xFF1D4ED8)),
+                    Icon(Icons.info_rounded,
+                        size: 17, color: Color(0xFF1D4ED8)),
                     SizedBox(width: 6),
                     Text(
                       'Info',
