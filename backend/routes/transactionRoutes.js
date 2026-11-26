@@ -50,7 +50,7 @@ async function ensureTransactionSchema() {
 
     txSchemaInitialized = true;
   } catch (err) {
-    console.error('[ensureTransactionSchema] Warning:', err.message);
+    throw new Error(`Skema transaksi gagal disiapkan: ${err.message}`, { cause: err });
   }
 }
 

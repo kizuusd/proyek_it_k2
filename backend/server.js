@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const { testConnection } = require('./config/db');
+const { pool, database, testConnection } = require('./config/db');
 const authRoutes = require('./routes/authRoutes');
 const { router: userRoutes, ensureUsersSchema } = require('./routes/userRoutes');
 const leaveRoutes = require('./routes/leaveRoutes');
@@ -12,7 +12,8 @@ const { router: transactionRoutes, ensureTransactionSchema } = require('./routes
 const { router: monitoringRoutes } = require('./routes/monitoringRoutes');
 
 const app = express();
-const PORT = process.env.PORT || 8000;
+const PORT = Number(process.env.PORT || 8000);
+const HOST = process.env.HOST || '127.0.0.1';
 
 // Middleware
 app.use(cors());
@@ -26,13 +27,17 @@ app.use((req, res, next) => {
 });
 
 // Routes
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    message: 'Backend Node.js Tracking Sales CV Maju Bersama berjalan dengan baik.',
-    database: 'MySQL (db_tracking_sales)',
-    timestamp: new Date().toISOString(),
-  });
+app.get('/api/health', async (req, res) => {
+  try {
+    await testConnection();
+    return res.json({
+      status: 'OK',
+      database: `MySQL (${database})`,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    return res.status(503).json({ status: 'UNAVAILABLE', message: 'MySQL tidak dapat dihubungi.' });
+  }
 });
 
 app.use('/api/auth', authRoutes);
@@ -52,19 +57,32 @@ app.use((req, res) => {
 
 // Start Server
 async function startServer() {
-  const connected = await testConnection();
-  if (connected) {
-    await ensureUsersSchema();
-    await ensureProductAndStockSchema();
-    await ensureAttendanceSchema();
-    await ensureRouteSchema();
-    await ensureTransactionSchema();
+  if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+    throw new Error('PORT harus berupa angka antara 1 dan 65535.');
   }
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server Node.js berjalan di http://localhost:${PORT}`);
-    console.log(`📡 Base URL API: http://localhost:${PORT}/api`);
-    console.log(`📱 Untuk Android Emulator gunakan: http://10.0.2.2:${PORT}/api`);
+  await testConnection();
+  await ensureUsersSchema();
+  await ensureProductAndStockSchema();
+  await ensureAttendanceSchema();
+  await ensureRouteSchema();
+  await ensureTransactionSchema();
+  await new Promise((resolve, reject) => {
+    const server = app.listen(PORT, HOST, resolve);
+    server.once('error', reject);
   });
+  console.log(`Backend siap di http://${HOST}:${PORT}/api (MySQL: ${database})`);
 }
 
-startServer();
+startServer().catch(async (error) => {
+  const code = error.code || error.cause?.code;
+  console.error('Backend gagal dimulai:', error.message);
+  if (code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} sedang dipakai. Ubah PORT di backend/.env atau hentikan server lama.`);
+  } else if (['ER_BAD_DB_ERROR', 'ER_NO_SUCH_TABLE'].includes(code)) {
+    console.error('Impor database/db_tracking_sales.sql pada database baru dan periksa DB_NAME.');
+  } else if (['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'ER_ACCESS_DENIED_ERROR'].includes(code)) {
+    console.error('Pastikan MySQL aktif dan pengaturan DB_* di backend/.env sesuai.');
+  }
+  process.exitCode = 1;
+  await pool.end();
+});

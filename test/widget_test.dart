@@ -690,15 +690,8 @@ void main() {
     expect(find.text('Terima'), findsOneWidget);
     expect(find.text('Tolak'), findsOneWidget);
 
-    // 4. Klik tombol "Terima", modal verifikasi muncul
+    // Tombol "Terima" langsung menyetujui dengan jumlah yang diajukan.
     await tester.tap(find.text('Terima'));
-    await tester.pumpAndSettle();
-
-    expect(find.text('Penerimaan & Verifikasi Pengajuan Barang'), findsOneWidget);
-    expect(find.text('Terima & Update Stok'), findsOneWidget);
-
-    // 5. Admin menerima pengajuan
-    await tester.tap(find.text('Terima & Update Stok'));
     await tester.pumpAndSettle();
 
     // Status berubah menjadi Disetujui

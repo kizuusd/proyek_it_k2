@@ -54,7 +54,7 @@ async function ensureProductAndStockSchema() {
 
     schemaInitialized = true;
   } catch (err) {
-    console.error('[ensureProductAndStockSchema] Warning:', err.message);
+    throw new Error(`Skema produk dan stok gagal disiapkan: ${err.message}`, { cause: err });
   }
 }
 

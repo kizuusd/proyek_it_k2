@@ -10,15 +10,8 @@
             "request": "attach"
         },
         {
-            "name": "Flutter: Attach to Device",
-            "type": "dart",
-            "request": "attach"
-        },
-
-        {
-            "name": "proyek_it_k2 (Flutter V2110)",
+            "name": "Tracking Sales (Flutter)",
             "program": "lib/main.dart",
-            "deviceId": "1555083972000AA",
             "request": "launch",
             "type": "dart"
         }

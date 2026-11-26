@@ -26,33 +26,12 @@ Backend ini dibangun menggunakan **Node.js (Express)** dan terhubung langsung ke
 
 ---
 
-## 🚀 Cara Menjalankan Backend
-Pastikan MySQL (misal dari Laragon/XAMPP) sudah berjalan di port `3306`.
+## Menjalankan Backend
 
-```bash
-# 1. Pindah ke direktori backend
-cd backend
+Ikuti [panduan setup proyek](../README.md) untuk mengimpor skema pada database baru dan menjalankan Android.
 
-# 2. Instal dependensi (hanya saat pertama kali)
-npm install
+Dari folder ini, salin `.env.example` menjadi `.env` saat setup pertama, lalu jalankan `npm ci` dan `npm start`. Pada PowerShell Windows, gunakan `npm.cmd ci` dan `npm.cmd start` bila eksekusi skrip dibatasi. Gunakan Node.js 22 atau lebih baru.
 
-# 3. Jalankan server backend
-npm start
-# atau mode development auto-reload
-npm run dev
-```
+Backend memuat `backend/.env` secara otomatis. Pengaturan dari environment shell tetap berlaku jika variabel yang sama juga ada di file. Secara default, server mendengarkan di `127.0.0.1:8000` dan menggunakan database `db_tracking_sales` di `127.0.0.1:3306`.
 
-Server akan aktif di:
-- **Desktop/Lokal**: `http://localhost:8000`
-- **Android Emulator**: `http://10.0.2.2:8000`
-
----
-
-## 🗄️ Konfigurasi Database
-File konfigurasi database terdapat di `backend/config/db.js`.
-Secara default menggunakan:
-- Host: `127.0.0.1`
-- Port: `3306`
-- User: `root`
-- Password: `(kosong)`
-- Database: `db_tracking_sales`
+`GET /api/health` mengembalikan HTTP 200 saat database dapat diakses dan HTTP 503 jika koneksi terputus. Baca keluaran terminal jika koneksi atau migrasi database gagal saat startup.

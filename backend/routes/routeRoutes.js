@@ -39,7 +39,7 @@ async function ensureRouteSchema() {
 
     routeSchemaInitialized = true;
   } catch (err) {
-    console.error('[ensureRouteSchema] Warning:', err.message);
+    throw new Error(`Skema rute gagal disiapkan: ${err.message}`, { cause: err });
   }
 }
 

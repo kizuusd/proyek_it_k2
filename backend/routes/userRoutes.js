@@ -82,7 +82,7 @@ async function ensureUsersSchema() {
 
     usersSchemaInitialized = true;
   } catch (err) {
-    console.error('[ensureUsersSchema] Warning:', err.message);
+    throw new Error(`Skema pengguna gagal disiapkan: ${err.message}`, { cause: err });
   }
 }
 

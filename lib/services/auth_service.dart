@@ -27,129 +27,69 @@ class AuthService {
   static const String _mockUsersStorageKey = 'auth_mock_users';
   final Map<int, String> _deletedMemberEmails = {};
   static const String _mockStatusLogsKey = 'auth_mock_membership_logs';
-  static const String _lastResolvedUrlKey = 'auth_last_resolved_base_url';
   Future<void>? _mockUsersLoad;
   final List<MembershipStatusLog> _mockStatusLogs = [];
 
-  // Base URL konfigurasi REST API backend (Node.js Express + MySQL)
   static const String baseUrl = 'http://127.0.0.1:8000/api';
   static const String androidBaseUrl = 'http://10.0.2.2:8000/api';
-  static const String lanBaseUrl = 'http://192.168.2.11:8000/api';
+  static const String _configuredApiUrl = String.fromEnvironment('API_BASE_URL');
+  static final String _apiOverride =
+      _configuredApiUrl.trim().replaceFirst(RegExp(r'/+$'), '');
 
   static String? _resolvedBaseUrl;
   static Future<String>? _resolvingFuture;
 
   static List<String> get candidateBaseUrls {
+    if (_apiOverride.isNotEmpty) return [_apiOverride];
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return const [
-        lanBaseUrl,     // Perangkat fisik via Wi-Fi LAN lokal
-        baseUrl,        // Perangkat fisik via USB (adb reverse tcp:8000 tcp:8000)
-        androidBaseUrl, // Android Emulator (10.0.2.2)
-        'http://192.168.10.1:8000/api',
-        'http://192.168.177.1:8000/api',
-        'http://192.168.56.1:8000/api',
-      ];
+      return const [baseUrl, androidBaseUrl];
     }
-    return const [
-      baseUrl,
-      'http://192.168.177.1:8000/api',
-      lanBaseUrl,
-    ];
+    return const [baseUrl];
   }
 
-  static String get activeBaseUrl {
-    if (_resolvedBaseUrl != null) {
-      return _resolvedBaseUrl!;
-    }
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      return lanBaseUrl;
-    }
-    return baseUrl;
-  }
+  static String get activeBaseUrl => _resolvedBaseUrl ?? candidateBaseUrls.first;
 
   static Future<String> resolveBaseUrl({bool forceRefresh = false}) async {
-    try {
-      final bindingName = WidgetsBinding.instance.runtimeType.toString();
-      if (bindingName.contains('Test')) {
-        return activeBaseUrl;
-      }
-    } catch (_) {}
+    final candidates = candidateBaseUrls;
+    if (candidates.length == 1 || _isTestEnv) return activeBaseUrl;
+    if (!forceRefresh && _resolvedBaseUrl != null) return _resolvedBaseUrl!;
+    if (_resolvingFuture != null) return _resolvingFuture!;
 
-    if (!forceRefresh && _resolvedBaseUrl != null) {
-      return _resolvedBaseUrl!;
-    }
-    if (!forceRefresh && _resolvingFuture != null) {
-      return _resolvingFuture!;
-    }
-
-    final future = _probeBaseUrls();
+    final future = _probeBaseUrls(candidates);
     _resolvingFuture = future;
     try {
       final resolved = await future;
       _resolvedBaseUrl = resolved;
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString(_lastResolvedUrlKey, resolved);
-      } catch (_) {}
       return resolved;
     } finally {
       _resolvingFuture = null;
     }
   }
 
-  /// Probe semua kandidat URL secara paralel dan ambil URL PERTAMA yang merespons HTTP 200 OK.
-  /// Mengabaikan kandidat yang gagal cepat (misal Connection refused pada 127.0.0.1 / 10.0.2.2).
-  static Future<String> _probeBaseUrls() async {
-    final candidates = <String>[];
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final savedUrl = prefs.getString(_lastResolvedUrlKey);
-      if (savedUrl != null && savedUrl.isNotEmpty) {
-        candidates.add(savedUrl);
-      }
-    } catch (_) {}
-    for (final c in candidateBaseUrls) {
-      if (!candidates.contains(c)) {
-        candidates.add(c);
-      }
-    }
-
-    final completer = Completer<String>();
-    int remaining = candidates.length;
+  static Future<String> _probeBaseUrls(List<String> candidates) {
+    final result = Completer<String>();
+    var remaining = candidates.length;
 
     for (final url in candidates) {
-      http
-          .get(
-            Uri.parse('$url/health'),
-            headers: {'Accept': 'application/json'},
-          )
-          .timeout(const Duration(milliseconds: 2500))
-          .then((response) {
-        if (response.statusCode == 200 && !completer.isCompleted) {
-          completer.complete(url);
-        } else {
-          remaining--;
-          if (remaining <= 0 && !completer.isCompleted) {
-            completer.complete(
-              !kIsWeb && defaultTargetPlatform == TargetPlatform.android
-                  ? lanBaseUrl
-                  : baseUrl,
-            );
+      unawaited(() async {
+        try {
+          final response = await http
+              .get(Uri.parse('$url/health'))
+              .timeout(const Duration(milliseconds: 2500));
+          if (response.statusCode == 200 && !result.isCompleted) {
+            final data = jsonDecode(response.body);
+            if (data is Map && data['status'] == 'OK') result.complete(url);
+          }
+        } catch (_) {
+          // Coba kandidat lain bila endpoint ini tidak tersedia.
+        } finally {
+          if (--remaining == 0 && !result.isCompleted) {
+            result.complete(candidates.first);
           }
         }
-      }).catchError((_) {
-        remaining--;
-        if (remaining <= 0 && !completer.isCompleted) {
-          completer.complete(
-            !kIsWeb && defaultTargetPlatform == TargetPlatform.android
-                ? lanBaseUrl
-                : baseUrl,
-          );
-        }
-      });
+      }());
     }
-
-    return completer.future;
+    return result.future;
   }
 
   /// Menjalankan HTTP request dengan auto-failover ke seluruh kandidat URL lokal
@@ -173,10 +113,6 @@ class AuthService {
         try {
           final response = await requestFn(candidate);
           _resolvedBaseUrl = candidate;
-          try {
-            final prefs = await SharedPreferences.getInstance();
-            await prefs.setString(_lastResolvedUrlKey, candidate);
-          } catch (_) {}
           return response;
         } catch (e) {
           lastError = e;
@@ -190,7 +126,7 @@ class AuthService {
   // Default false agar terhubung langsung ke backend Node.js & MySQL lokal
   bool useMock = false;
 
-  bool get _isTestEnv {
+  static bool get _isTestEnv {
     try {
       final bindingName = WidgetsBinding.instance.runtimeType.toString();
       if (bindingName.contains('Test')) {

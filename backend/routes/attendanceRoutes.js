@@ -40,7 +40,7 @@ async function ensureAttendanceSchema() {
     `);
     attendanceSchemaInitialized = true;
   } catch (err) {
-    console.error('[ensureAttendanceSchema] Warning:', err.message);
+    throw new Error(`Skema absensi gagal disiapkan: ${err.message}`, { cause: err });
   }
 }
 
