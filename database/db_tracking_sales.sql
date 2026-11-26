@@ -292,6 +292,61 @@ CREATE TABLE `stock_requests` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Pengajuan penambahan/pengurangan/retur barang sales ke admin - FR10';
 
 -- --------------------------------------------------------
+-- Tabel: stock_batches
+-- --------------------------------------------------------
+DROP TABLE IF EXISTS `stock_batches`;
+CREATE TABLE `stock_batches` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'PK',
+  `kode_batch` varchar(60) NOT NULL COMMENT 'Kode unik batch harian',
+  `tanggal` date NOT NULL COMMENT 'Tanggal batch pengambilan barang',
+  `sales_id` bigint(20) NOT NULL COMMENT 'Sales pengaju batch',
+  `catatan_pengajuan` text DEFAULT NULL COMMENT 'Catatan batch pengajuan barang',
+  `status_review` enum('menunggu','ditinjau_admin','disetujui_owner','ditolak') NOT NULL DEFAULT 'menunggu' COMMENT 'Status tinjauan Admin dan Owner',
+  `reviewed_by_admin` bigint(20) DEFAULT NULL COMMENT 'Admin peninjau',
+  `reviewed_by_admin_at` datetime DEFAULT NULL,
+  `catatan_admin` text DEFAULT NULL,
+  `reviewed_by_owner` bigint(20) DEFAULT NULL COMMENT 'Owner peninjau final',
+  `reviewed_by_owner_at` datetime DEFAULT NULL,
+  `catatan_owner` text DEFAULT NULL,
+  `status_opname` enum('belum_opname','proses_opname','valid') NOT NULL DEFAULT 'belum_opname' COMMENT 'Status stok opname per batch pada Pendapatan Sales',
+  `opname_by` bigint(20) DEFAULT NULL COMMENT 'Administrator/Owner pelaksana stok opname',
+  `opname_by_role` varchar(40) DEFAULT NULL,
+  `opname_at` datetime DEFAULT NULL,
+  `catatan_opname` text DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_stock_batches_kode` (`kode_batch`),
+  KEY `idx_stock_batches_sales` (`sales_id`),
+  KEY `idx_stock_batches_tanggal` (`tanggal`),
+  CONSTRAINT `fk_stock_batches_sales` FOREIGN KEY (`sales_id`) REFERENCES `users` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Batch pengajuan barang harian sales yang otomatis masuk ke stok opname pendapatan - FR10, FR05';
+
+-- --------------------------------------------------------
+-- Tabel: stock_batch_items
+-- --------------------------------------------------------
+DROP TABLE IF EXISTS `stock_batch_items`;
+CREATE TABLE `stock_batch_items` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT COMMENT 'PK',
+  `batch_id` bigint(20) NOT NULL COMMENT 'FK ke stock_batches',
+  `product_id` bigint(20) NOT NULL COMMENT 'FK ke products',
+  `kode_barang` varchar(100) NOT NULL,
+  `nama_barang` varchar(255) NOT NULL,
+  `kategori` varchar(100) DEFAULT 'Plastik',
+  `satuan` varchar(50) DEFAULT 'Pack',
+  `foto_url` longtext DEFAULT NULL,
+  `harga_satuan` decimal(15,2) NOT NULL DEFAULT 0.00 COMMENT 'Snapshot harga jual saat batch diajukan',
+  `qty_diambil` int(11) NOT NULL DEFAULT 1 COMMENT 'Jumlah barang diambil dalam batch',
+  `qty_sisa_opname` int(11) DEFAULT NULL COMMENT 'Sisa stok fisik hasil stok opname',
+  `catatan_opname` varchar(255) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_sbi_batch_id` (`batch_id`),
+  KEY `idx_sbi_product_id` (`product_id`),
+  CONSTRAINT `fk_sbi_batch` FOREIGN KEY (`batch_id`) REFERENCES `stock_batches` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_sbi_product` FOREIGN KEY (`product_id`) REFERENCES `products` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='Daftar item barang di dalam setiap batch harian - FR10, FR05';
+
+-- --------------------------------------------------------
 -- Tabel: transaction_items
 -- --------------------------------------------------------
 DROP TABLE IF EXISTS `transaction_items`;

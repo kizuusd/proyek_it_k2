@@ -5,6 +5,7 @@ import '../models/user_model.dart';
 import 'attendance_service.dart';
 import 'auth_service.dart';
 import 'route_service.dart';
+import 'stock_batch_service.dart';
 import 'transaction_service.dart';
 
 class MonitoringActivityItem {
@@ -175,6 +176,9 @@ class MonitoringService {
     final transactions = (await TransactionService.loadCached(salesId: effectiveSalesId))
         .where((t) => inRange(t.tanggal))
         .toList();
+    final batches = (await StockBatchService.loadCached(salesId: effectiveSalesId))
+        .where((b) => inRange(b.tanggal))
+        .toList();
 
     final hadir = attendances.where((a) => a.status == 'hadir').length;
     final terlambat = attendances.where((a) => a.status == 'terlambat').length;
@@ -192,9 +196,22 @@ class MonitoringService {
         transactions.where((t) => t.statusVerifikasi == StatusVerifikasiTransaksi.menunggu).toList();
     final rejectedTxs =
         transactions.where((t) => t.statusVerifikasi == StatusVerifikasiTransaksi.ditolak).toList();
-    final approvedOmzet = approvedTxs.fold<int>(0, (sum, t) => sum + t.total);
+    final validBatches = batches.where((b) => b.isValid).toList();
+    final approvedOmzet = approvedTxs.fold<int>(0, (sum, t) => sum + t.total) +
+        validBatches.fold<int>(0, (sum, b) => sum + b.totalPendapatan);
 
     final activities = <MonitoringActivityItem>[];
+    for (final b in batches.take(3)) {
+      activities.add(
+        MonitoringActivityItem(
+          modul: 'BATCH OPNAME',
+          userName: b.salesName,
+          deskripsi:
+              '${b.kodeBatch} (${b.totalJenisBarang} barang, ${b.totalQtyDiambil} unit) [${b.opnameStatusLabel}]',
+          tanggal: b.tanggal,
+        ),
+      );
+    }
     for (final tx in transactions.take(4)) {
       activities.add(
         MonitoringActivityItem(
@@ -243,7 +260,7 @@ class MonitoringService {
       pendingRoutes: pendingRoutes,
       cancelledRoutes: cancelledRoutes,
       approvedOmzet: approvedOmzet,
-      approvedTxCount: approvedTxs.length,
+      approvedTxCount: approvedTxs.length + validBatches.length,
       pendingTxCount: pendingTxs.length,
       rejectedTxCount: rejectedTxs.length,
       recentActivities: activities.take(10).toList(),

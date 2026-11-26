@@ -5,6 +5,7 @@ const { ensureUsersSchema, resolveActor, isManagerRole } = require('./userRoutes
 const { ensureAttendanceSchema } = require('./attendanceRoutes');
 const { ensureRouteSchema } = require('./routeRoutes');
 const { ensureTransactionSchema } = require('./transactionRoutes');
+const { ensureStockBatchSchema } = require('./stockBatchRoutes');
 
 // --------------------------------------------------------
 // GET /api/monitoring/summary
@@ -16,6 +17,7 @@ router.get('/summary', async (req, res) => {
     await ensureAttendanceSchema();
     await ensureRouteSchema();
     await ensureTransactionSchema();
+    await ensureStockBatchSchema();
 
     const { start_date, end_date, sales_id } = req.query;
     const actor = await resolveActor(req);
@@ -119,6 +121,34 @@ router.get('/summary', async (req, res) => {
       } else {
         pendingTxCount += cnt;
       }
+    }
+
+    // 4b. Tambah omzet dari batch stok opname yang berstatus 'valid'
+    let batchOmzetQuery = `
+      SELECT sb.id,
+             COALESCE(SUM(GREATEST(0, sbi.qty_diambil - COALESCE(sbi.qty_sisa_opname, sbi.qty_diambil)) * sbi.harga_satuan), 0) AS batch_total
+      FROM stock_batches sb
+      JOIN stock_batch_items sbi ON sbi.batch_id = sb.id
+      WHERE sb.status_opname = 'valid'
+    `;
+    const batchOmzetParams = [];
+    if (targetSalesId) {
+      batchOmzetQuery += ' AND sb.sales_id = ?';
+      batchOmzetParams.push(targetSalesId);
+    }
+    if (start_date) {
+      batchOmzetQuery += ' AND sb.tanggal >= ?';
+      batchOmzetParams.push(start_date);
+    }
+    if (end_date) {
+      batchOmzetQuery += ' AND sb.tanggal <= ?';
+      batchOmzetParams.push(end_date);
+    }
+    batchOmzetQuery += ' GROUP BY sb.id';
+    const [validBatchRows] = await pool.query(batchOmzetQuery, batchOmzetParams);
+    for (const b of validBatchRows) {
+      approvedOmzet += Number(b.batch_total || 0);
+      approvedTxCount += 1;
     }
 
     // 5. Aktivitas terbaru dari activity_logs

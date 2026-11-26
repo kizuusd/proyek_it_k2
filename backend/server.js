@@ -6,6 +6,7 @@ const { router: userRoutes, ensureUsersSchema } = require('./routes/userRoutes')
 const leaveRoutes = require('./routes/leaveRoutes');
 const { router: productRoutes, ensureProductAndStockSchema } = require('./routes/productRoutes');
 const stockRequestRoutes = require('./routes/stockRequestRoutes');
+const { router: stockBatchRoutes, ensureStockBatchSchema } = require('./routes/stockBatchRoutes');
 const { router: attendanceRoutes, ensureAttendanceSchema } = require('./routes/attendanceRoutes');
 const { router: routeRoutes, ensureRouteSchema } = require('./routes/routeRoutes');
 const { router: transactionRoutes, ensureTransactionSchema } = require('./routes/transactionRoutes');
@@ -40,6 +41,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/leaves', leaveRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/stock-requests', stockRequestRoutes);
+app.use('/api/stock-batches', stockBatchRoutes);
 app.use('/api/attendances', attendanceRoutes);
 app.use('/api/routes', routeRoutes);
 app.use('/api/transactions', transactionRoutes);
@@ -56,6 +58,7 @@ async function startServer() {
   if (connected) {
     await ensureUsersSchema();
     await ensureProductAndStockSchema();
+    await ensureStockBatchSchema();
     await ensureAttendanceSchema();
     await ensureRouteSchema();
     await ensureTransactionSchema();

@@ -20,6 +20,7 @@ import 'package:shop_app/services/auth_service.dart';
 import 'package:shop_app/services/inventory_service.dart';
 import 'package:shop_app/services/monitoring_service.dart';
 import 'package:shop_app/services/route_service.dart';
+import 'package:shop_app/services/stock_batch_service.dart';
 import 'package:shop_app/services/transaction_service.dart';
 
 void main() {
@@ -30,6 +31,7 @@ void main() {
     await InventoryService.clearCache();
     await AttendanceService.clearCache();
     await RouteService.clearCache();
+    await StockBatchService.clearCache();
     await TransactionService.clearCache();
   });
 
@@ -693,6 +695,174 @@ void main() {
 
       expect(find.text('Total Omzet Penjualan (Disetujui)'), findsOneWidget);
       expect(find.text('Catat Penjualan'), findsOneWidget);
+    });
+
+    test('Batch pengajuan harian otomatis masuk ke Pendapatan Sales dan menjadi Valid setelah stok opname',
+        () async {
+      await InventoryService.saveCachedProducts([
+        ProductItem(
+          id: 1,
+          kodeBarang: 'BRG-001',
+          namaBarang: 'Plastik Kresek 1kg',
+          harga: 15000,
+          stokGudang: 100,
+          stokSales: 0,
+          isActive: true,
+        ),
+        ProductItem(
+          id: 2,
+          kodeBarang: 'BRG-002',
+          namaBarang: 'Plastik HD Bening 20x30',
+          harga: 22000,
+          stokGudang: 80,
+          stokSales: 0,
+          isActive: true,
+        ),
+      ]);
+      await StockBatchService.saveCached([]);
+
+      const sales = UserModel(
+        id: 3,
+        name: 'Muhammad Ulil Abshor',
+        email: 'sales@majubersama.com',
+        role: 'sales',
+      );
+      const admin = UserModel(
+        id: 2,
+        name: 'Agung Prasetyo Wibowo',
+        email: 'admin@majubersama.com',
+        role: 'administrator',
+      );
+      const owner = UserModel(
+        id: 1,
+        name: 'Dimas Brahamsyah Santosa Putra',
+        email: 'owner@majubersama.com',
+        role: 'superadmin',
+      );
+
+      // 1. Sales mengajukan batch harian berisi beberapa barang
+      final created = await StockBatchService.createDailyBatch(
+        salesUser: sales,
+        tanggal: StockBatchService.todayYmd(),
+        catatanPengajuan: 'Muatan kanvas pagi',
+        items: [
+          {'product_id': 1, 'qty_diambil': 10},
+          {'product_id': 2, 'qty_diambil': 5},
+        ],
+      );
+      expect(created.items.length, 2);
+      expect(created.statusReview, StatusReviewBatch.menunggu);
+      expect(created.statusOpname, StatusOpnameBatch.belumOpname);
+
+      // 2. Batch langsung otomatis tersedia di daftar Pendapatan Sales (Stok Opname)
+      final inPendapatan = await StockBatchService.fetchBatches(salesId: sales.id);
+      expect(inPendapatan.any((b) => b.id == created.id), isTrue);
+
+      // 3. Admin meninjau, lalu Owner menyetujui tinjauan
+      await expectLater(
+        () => StockBatchService.reviewBatch(
+          batchId: created.id,
+          actor: admin,
+          nextStatus: StatusReviewBatch.disetujuiOwner,
+        ),
+        throwsException,
+      );
+      final afterAdmin = await StockBatchService.reviewBatch(
+        batchId: created.id,
+        actor: admin,
+        nextStatus: StatusReviewBatch.ditinjauAdmin,
+        note: 'Muatan sesuai',
+      );
+      expect(afterAdmin.statusReview, StatusReviewBatch.ditinjauAdmin);
+
+      final afterOwner = await StockBatchService.reviewBatch(
+        batchId: created.id,
+        actor: owner,
+        nextStatus: StatusReviewBatch.disetujuiOwner,
+        note: 'Acc Owner',
+      );
+      expect(afterOwner.statusReview, StatusReviewBatch.disetujuiOwner);
+
+      // 4. Stok opname dilakukan bersama Administrator/Owner per batch -> selesai = Valid
+      final validBatch = await StockBatchService.submitBatchOpname(
+        batchId: created.id,
+        actor: admin,
+        sisaByItemId: {
+          created.items[0].id: 2, // terjual 8 x 15.000 = 120.000
+          created.items[1].id: 1, // terjual 4 x 22.000 = 88.000
+        },
+        catatanOpname: 'Cocok dengan fisik di mobil kanvas',
+        finalize: true,
+      );
+      expect(validBatch.isValid, isTrue);
+      expect(validBatch.statusOpname, StatusOpnameBatch.valid);
+      expect(validBatch.totalQtyTerjual, 12);
+      expect(validBatch.totalPendapatan, 208000);
+
+      // MonitoringService menghitung pendapatan batch Valid ke approvedOmzet
+      final summary = await MonitoringService.loadSummary(currentUser: admin);
+      expect(summary.approvedOmzet, 370000 + 208000);
+    });
+
+    testWidgets('FR05 allows Admin/Owner to complete Stok Opname Batch until Valid',
+        (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1280, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final batch = StockBatch(
+        id: 50,
+        kodeBatch: 'BATCH-20261126-050',
+        tanggal: '2026-11-26',
+        salesId: 3,
+        salesName: 'Muhammad Ulil Abshor',
+        statusReview: StatusReviewBatch.disetujuiOwner,
+        statusOpname: StatusOpnameBatch.belumOpname,
+        items: [
+          StockBatchItem(
+            id: 5001,
+            batchId: 50,
+            productId: 1,
+            kodeBarang: 'BRG-001',
+            namaBarang: 'Plastik Kresek 1kg',
+            satuan: 'Pack',
+            hargaSatuan: 15000,
+            qtyDiambil: 10,
+          ),
+        ],
+      );
+      await StockBatchService.saveCached([batch]);
+
+      final adminProvider = AuthProvider();
+      await tester.runAsync(() async {
+        await adminProvider.login('admin@majubersama.com', 'password123');
+      });
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [ChangeNotifierProvider<AuthProvider>.value(value: adminProvider)],
+          child: const MaterialApp(home: FR05PendapatanScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('BATCH-20261126-050'), findsOneWidget);
+      expect(find.text('Stok Opname Batch'), findsOneWidget);
+
+      await tester.tap(find.text('Stok Opname Batch'));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.byType(TextFormField).first, '3'); // sisa 3 -> terjual 7 (Rp 105.000)
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Selesaikan & Validasi Batch'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('VALID'), findsOneWidget);
+      expect(find.text('Rp 105.000'), findsWidgets);
     });
   });
 

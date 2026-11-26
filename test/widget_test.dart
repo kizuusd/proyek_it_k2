@@ -13,12 +13,14 @@ import 'package:shop_app/screens/tracking_sales/fr11_profil_screen.dart';
 import 'package:shop_app/screens/tracking_sales/fr12_register_screen.dart';
 import 'package:shop_app/screens/tracking_sales/home_dashboard_screen.dart';
 import 'package:shop_app/services/inventory_service.dart';
+import 'package:shop_app/services/stock_batch_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  setUp(() {
+  setUp(() async {
     SharedPreferences.setMockInitialValues({});
+    await StockBatchService.clearCache();
   });
 
   testWidgets('App renders login screen without debug chips and with Google login',
@@ -422,7 +424,7 @@ void main() {
     expect(find.text('Putuskan Tautan Akun Google'), findsOneWidget);
   });
 
-  testWidgets('FR10 Sales can submit stock request via Ajukan Barang without Tambah Barang button',
+  testWidgets('FR10 Sales can submit daily batch request and automatically appear in Pendapatan Sales',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 1400);
     tester.view.devicePixelRatio = 1.0;
@@ -432,9 +434,9 @@ void main() {
     });
     addTearDown(() async {
       await InventoryService.clearCache();
+      await StockBatchService.clearCache();
     });
 
-    // Siapkan data barang pengujian dan pastikan dihapus setelah pengujian selesai
     final testProduct = ProductItem(
       id: 1,
       kodeBarang: 'BRG-001',
@@ -443,10 +445,11 @@ void main() {
       satuan: 'Pack',
       stokGudang: 120,
       stokSales: 15,
+      harga: 15000,
       fotoUrl: 'preset:plastik',
     );
     await InventoryService.saveCachedProducts([testProduct]);
-    await InventoryService.saveCachedRequests([]);
+    await StockBatchService.saveCached([]);
 
     final salesProvider = AuthProvider();
     await tester.runAsync(() async {
@@ -465,49 +468,32 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 1. Verifikasi tombol Tambah Barang sudah dihapus untuk Sales dan diganti dengan Ajukan Barang
     expect(find.text('Profil Sales'), findsOneWidget);
-    expect(find.text('Pengajuan Stok'), findsWidgets);
-    expect(find.text('Belum ada data pengajuan stok pada filter ini.'), findsOneWidget);
+    expect(find.text('Batch Pengajuan Harian Saya'), findsOneWidget);
+    expect(find.text('Ajukan Batch Barang'), findsOneWidget);
     expect(find.text('Tambah Barang'), findsNothing);
-    expect(find.text('Ajukan Pengajuan'), findsNothing);
-    expect(find.text('Ajukan Barang'), findsOneWidget);
-    expect(find.text('Ajukan Pengajuan Barang'), findsNothing);
 
-    // 2. Uji Sales membuka pop-up "Ajukan Barang" dan mengirim pengajuan stok
-    await tester.tap(find.text('Ajukan Barang'));
+    // Sales membuka modal pengajuan batch harian dan menambah barang ke dalam batch
+    await tester.tap(find.text('Ajukan Batch Barang'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Ajukan Pengajuan Barang'), findsOneWidget);
+    expect(find.text('Ajukan Batch Barang Harian'), findsOneWidget);
 
-    // Verifikasi pilihan Kurang Stok dihilangkan
-    expect(find.text('Kurang Stok'), findsNothing);
-    expect(find.text('Tambah Stok'), findsOneWidget);
-    expect(find.text('Retur Barang'), findsOneWidget);
-
-    // Verifikasi field alasan hanya muncul pada Retur Barang
-    expect(find.text('Alasan Retur '), findsNothing);
-    await tester.tap(find.text('Retur Barang'));
-    await tester.pumpAndSettle();
-    expect(find.text('Alasan Retur '), findsOneWidget);
-
-    await tester.tap(find.text('Tambah Stok'));
-    await tester.pumpAndSettle();
-    expect(find.text('Alasan Retur '), findsNothing);
-
-    await tester.enterText(
-      find.byType(TextFormField).at(0),
-      '5',
-    );
-    await tester.tap(find.text('Kirim Pengajuan'));
+    await tester.enterText(find.byType(TextFormField).first, '12');
+    await tester.tap(find.text('Tambah Item'));
     await tester.pumpAndSettle();
 
-    // Pop-up tertutup dan data masuk ke tabel dengan status Menunggu
-    expect(find.text('Ajukan Pengajuan Barang'), findsNothing);
-    expect(find.text('Menunggu'), findsWidgets);
+    expect(find.textContaining('Plastik Kresek 1kg • 12 Pack'), findsOneWidget);
+
+    await tester.tap(find.text('Kirim Batch Pengajuan'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Ajukan Batch Barang Harian'), findsNothing);
+    expect(find.text('Menunggu Tinjauan'), findsWidgets);
+    expect(find.text('Otomatis masuk ke Pendapatan Sales (Menunggu Opname)'), findsOneWidget);
   });
 
-  testWidgets('FR02 & FR10 Sales, Admin, and Owner can add products and approve sales stock requests',
+  testWidgets('FR02 Admin and Owner can add products in Master Barang',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 1400);
     tester.view.devicePixelRatio = 1.0;
@@ -525,7 +511,6 @@ void main() {
     });
     await InventoryService.saveCachedRequests([]);
 
-    // 1. Uji Manajemen Produk (FR02) untuk Admin / Owner & Sales
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -541,10 +526,8 @@ void main() {
     expect(find.text('Profil Admin'), findsOneWidget);
     expect(find.text('Manajemen Produk'), findsOneWidget);
     expect(find.text('Tambah Barang'), findsOneWidget);
-    // Pastikan form tidak tampil di bawah tabel sebelum pop-up dibuka
     expect(find.text('Simpan Produk'), findsNothing);
 
-    // Buka pop-up Tambah Barang lalu tutup (close X) -> pastikan hilang dan tidak tampil di bawahnya
     await tester.tap(find.text('Tambah Barang'));
     await tester.pumpAndSettle();
     expect(find.text('Simpan Produk'), findsOneWidget);
@@ -553,69 +536,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Simpan Produk'), findsNothing);
 
-    // Buka kembali pop-up Tambah Barang dan simpan produk baru
     await tester.tap(find.text('Tambah Barang'));
     await tester.pumpAndSettle();
 
-    await tester.enterText(
-      find.byType(TextFormField).at(1),
-      'Plastik PP 25x35',
-    );
-    await tester.enterText(
-      find.byType(TextFormField).at(3),
-      '50',
-    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'Plastik PP 25x35');
+    await tester.enterText(find.byType(TextFormField).at(3), '50');
     await tester.tap(find.text('Simpan Produk'));
     await tester.pumpAndSettle();
 
     expect(find.text('Simpan Produk'), findsNothing);
     expect(find.text('Plastik PP 25x35'), findsWidgets);
-
-    // 2. Uji Pengajuan Stok oleh Sales di FR10, lalu Persetujuan oleh Admin/Owner di FR02
-    final salesProvider = AuthProvider();
-    await tester.runAsync(() async {
-      await salesProvider.login('sales@majubersama.com', 'password123');
-    });
-
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<AuthProvider>.value(value: salesProvider),
-        ],
-        child: const MaterialApp(
-          home: FR10PengajuanBarangScreen(),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Ajukan Barang'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(0), '5');
-    await tester.tap(find.text('Kirim Pengajuan'));
-    await tester.pumpAndSettle();
-
-    // 3. Admin / Owner membuka Master Barang (FR02) dan menyetujui pengajuan stok dari Sales
-    await tester.pumpWidget(
-      MultiProvider(
-        providers: [
-          ChangeNotifierProvider<AuthProvider>.value(value: adminProvider),
-        ],
-        child: MaterialApp(
-          home: FR02MasterBarangScreen(key: UniqueKey()),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text('Setujui & Tambah Stok'), findsWidgets);
-    await tester.tap(find.text('Setujui & Tambah Stok').first);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Setujui & Tambah Stok'), findsNothing);
   });
 
-  testWidgets('FR10 Admin and Owner can view Penerimaan Pengajuan Barang, verify metrics, and accept or reject requests',
+  testWidgets('FR10 Admin reviews batch and Owner performs final review on daily batch',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1280, 1400);
     tester.view.devicePixelRatio = 1.0;
@@ -625,47 +558,42 @@ void main() {
     });
     addTearDown(() async {
       await InventoryService.clearCache();
+      await StockBatchService.clearCache();
     });
 
     final adminProvider = AuthProvider();
+    final ownerProvider = AuthProvider();
     await tester.runAsync(() async {
       await adminProvider.login('admin@majubersama.com', 'password123');
+      await ownerProvider.login('owner@majubersama.com', 'password123');
     });
-    await InventoryService.saveCachedRequests([]);
 
-    // 1. Simpan dummy data barang & permintaan stok dari sales untuk verifikasi Admin/Owner
-    final dummyProduct = ProductItem(
-      id: 1,
-      kodeBarang: 'BRG-001',
-      namaBarang: 'Plastik Kresek 1kg',
-      kategori: 'Plastik',
-      satuan: 'Pack',
-      stokGudang: 120,
-      stokSales: 15,
-      fotoUrl: 'preset:plastik',
-    );
-    final dummyReq = StockRequestItem(
+    final dummyBatch = StockBatch(
       id: 99,
-      kodePengajuan: 'REQ-2026-099',
+      kodeBatch: 'BATCH-20261126-099',
+      tanggal: '2026-11-26',
       salesId: 3,
-      salesName: 'Budi Santoso',
+      salesName: 'Muhammad Ulil Abshor',
       salesEmail: 'sales@majubersama.com',
-      productId: 1,
-      kodeBarang: 'BRG-001',
-      namaBarang: 'Plastik Kresek 1kg',
-      kategori: 'Plastik',
-      satuan: 'Pack',
-      stokGudang: 120,
-      stokSales: 15,
-      jenis: JenisPengajuanStok.tambah,
-      qtyDiajukan: 10,
-      alasan: 'Pengajuan Tambah Stok',
-      tanggalPengajuan: '3 Nov 2026',
-      status: StatusPengajuanStok.menunggu,
+      catatanPengajuan: 'Muatan harian',
+      statusReview: StatusReviewBatch.menunggu,
+      statusOpname: StatusOpnameBatch.belumOpname,
+      items: [
+        StockBatchItem(
+          id: 9901,
+          batchId: 99,
+          productId: 1,
+          kodeBarang: 'BRG-001',
+          namaBarang: 'Plastik Kresek 1kg',
+          satuan: 'Pack',
+          hargaSatuan: 15000,
+          qtyDiambil: 10,
+        ),
+      ],
     );
-    await InventoryService.saveCachedProducts([dummyProduct]);
-    await InventoryService.saveCachedRequests([dummyReq]);
+    await StockBatchService.saveCached([dummyBatch]);
 
+    // 1. Admin meninjau batch terlebih dahulu
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -678,32 +606,41 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // 2. Verifikasi UI Admin/Owner: Judul Penerimaan Pengajuan Barang, profil admin, kartu statistik
-    expect(find.text('Penerimaan Pengajuan Barang'), findsWidgets);
+    expect(find.text('Tinjauan Pengajuan Barang (Batch)'), findsOneWidget);
     expect(find.text('Profil Admin'), findsOneWidget);
-    expect(find.text('Total Masuk'), findsOneWidget);
-    expect(find.text('Menunggu'), findsWidgets);
-    expect(find.text('Diterima'), findsOneWidget);
-    expect(find.text('Ajukan Barang'), findsNothing); // Tombol ajukan barang tidak muncul untuk Admin/Owner
+    expect(find.text('Tinjau Admin'), findsOneWidget);
+    expect(find.text('Ajukan Batch Barang'), findsNothing);
 
-    // 3. Verifikasi tombol Terima & Tolak muncul di baris tabel untuk Admin
-    expect(find.text('Terima'), findsOneWidget);
-    expect(find.text('Tolak'), findsOneWidget);
-
-    // 4. Klik tombol "Terima", modal verifikasi muncul
-    await tester.tap(find.text('Terima'));
+    await tester.tap(find.text('Tinjau Admin'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Simpan Tinjauan Admin'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Penerimaan & Verifikasi Pengajuan Barang'), findsOneWidget);
-    expect(find.text('Terima & Update Stok'), findsOneWidget);
+    expect(find.text('Ditinjau Admin'), findsWidgets);
 
-    // 5. Admin menerima pengajuan
-    await tester.tap(find.text('Terima & Update Stok'));
+    // 2. Owner meninjau dan menyetujui batch
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(value: ownerProvider),
+        ],
+        child: MaterialApp(
+          key: UniqueKey(),
+          home: const FR10PengajuanBarangScreen(),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    // Status berubah menjadi Disetujui
-    expect(find.text('Disetujui'), findsWidgets);
-    expect(find.text('Terima'), findsNothing);
+    expect(find.text('Profil Owner'), findsOneWidget);
+    expect(find.text('Setujui Owner'), findsOneWidget);
+
+    await tester.tap(find.text('Setujui Owner'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Setujui Batch (Owner)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Disetujui Owner'), findsWidgets);
   });
 
   testWidgets('FR03 Admin and Owner can view Master Harga, verify metric cards, and update product prices',
