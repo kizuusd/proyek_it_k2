@@ -1,10 +1,14 @@
+import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../constants.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/attendance_service.dart';
-import '../../services/auth_service.dart';
 
 class FR08AbsensiScreen extends StatefulWidget {
   const FR08AbsensiScreen({Key? key}) : super(key: key);
@@ -19,11 +23,14 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
   AttendanceRecord? _todayRecord;
   bool _isLoading = true;
   bool _isSubmitting = false;
+  bool _isPickingPhoto = false;
+  Uint8List? _attendancePhoto;
 
   final TextEditingController _noteCtrl = TextEditingController();
   String _statusFilter = 'Semua'; // Semua, Hadir, Terlambat, Izin, Sakit, Alpa
   int? _selectedSalesFilter;
   String? _selectedDateFilter;
+  DateTimeRange? _selectedPeriod;
 
   @override
   void initState() {
@@ -53,8 +60,8 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
 
     List<UserModel> salesUsers = [];
     if (isManager) {
-      final allUsers = await AuthService().getAllUsers();
-      salesUsers = allUsers.where((u) => u.isSales).toList();
+      final allUsers = await authProvider.getAllUsers();
+      salesUsers = allUsers.where((u) => u.isSales && u.id != null).toList();
     }
 
     if (mounted) {
@@ -62,6 +69,10 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
         _records = fetched;
         _todayRecord = today;
         _salesList = salesUsers;
+        if (_selectedSalesFilter != null &&
+            !_salesList.any((sales) => sales.id == _selectedSalesFilter)) {
+          _selectedSalesFilter = null;
+        }
         _isLoading = false;
       });
     }
@@ -81,8 +92,97 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
           r.tanggal != _selectedDateFilter) {
         return false;
       }
+      final period = _selectedPeriod;
+      if (period != null) {
+        final date = DateTime.tryParse(r.tanggal);
+        if (date == null ||
+            date.isBefore(period.start) ||
+            date.isAfter(period.end)) {
+          return false;
+        }
+      }
       return true;
     }).toList();
+  }
+
+  Future<void> _pickAttendancePhoto() async {
+    setState(() => _isPickingPhoto = true);
+    try {
+      final source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        builder: (sheetContext) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: const Text('Ambil Foto'),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Pilih dari Galeri'),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (source == null || !mounted) return;
+      final image = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        imageQuality: 80,
+      );
+      if (image == null || !mounted) return;
+      if (await image.length() > AttendanceEvidence.maxPhotoBytes) {
+        throw Exception('Ukuran foto maksimal 900 KB. Pilih foto lain.');
+      }
+      final bytes = await image.readAsBytes();
+      if (mounted) setState(() => _attendancePhoto = bytes);
+    } catch (error) {
+      if (!mounted) return;
+      final message = error is Exception && error.toString().startsWith('Exception: ')
+          ? error.toString().substring(11)
+          : 'Foto tidak bisa dibuka. Periksa izin kamera atau pilih foto lain.';
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) setState(() => _isPickingPhoto = false);
+    }
+  }
+
+  Future<AttendanceEvidence> _collectAttendanceEvidence() async {
+    final photo = _attendancePhoto;
+    if (photo == null) throw Exception('Pilih foto bukti absensi terlebih dahulu.');
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      throw Exception('Aktifkan layanan lokasi (GPS), lalu coba lagi.');
+    }
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.deniedForever) {
+      throw Exception('Izinkan akses lokasi di pengaturan aplikasi, lalu coba lagi.');
+    }
+    if (permission == LocationPermission.denied) {
+      throw Exception('Izin lokasi diperlukan untuk absensi.');
+    }
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 20),
+        ),
+      );
+      return AttendanceEvidence(
+        photo: photo,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+    } on TimeoutException {
+      throw Exception('Lokasi belum ditemukan. Coba lagi di area dengan sinyal GPS yang lebih baik.');
+    }
   }
 
   Future<void> _handleCheckIn() async {
@@ -91,15 +191,19 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
 
     setState(() => _isSubmitting = true);
     try {
+      final evidence = await _collectAttendanceEvidence();
+      if (!mounted) return;
       final record = await AttendanceService.checkIn(
         salesId: user.id!,
         salesName: user.name,
         salesEmail: user.email,
         isActiveAccount: user.isActive && !user.isSuspended,
         catatan: _noteCtrl.text.trim(),
+        evidence: evidence,
       );
-      _noteCtrl.clear();
       if (!mounted) return;
+      _noteCtrl.clear();
+      _attendancePhoto = null;
       await _loadData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -131,11 +235,15 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
 
     setState(() => _isSubmitting = true);
     try {
+      final evidence = await _collectAttendanceEvidence();
+      if (!mounted) return;
       final record = await AttendanceService.checkOut(
         salesId: user.id!,
         salesEmail: user.email,
+        evidence: evidence,
       );
       if (!mounted) return;
+      _attendancePhoto = null;
       await _loadData();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -426,11 +534,13 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
     final authProvider = context.watch<AuthProvider>();
     final user = authProvider.currentUser;
     final isManager = user?.isManager ?? false;
+    final isOwner = user?.isSuperAdmin ?? false;
     final filtered = _filteredRecords;
+    final summaryRecords = isOwner ? filtered : _records;
 
-    final hadirCount = _records.where((r) => r.status == 'hadir').length;
-    final lateCount = _records.where((r) => r.status == 'terlambat').length;
-    final izinCount = _records.where((r) => r.status == 'izin' || r.status == 'sakit').length;
+    final hadirCount = summaryRecords.where((r) => r.status == 'hadir').length;
+    final lateCount = summaryRecords.where((r) => r.status == 'terlambat').length;
+    final izinCount = summaryRecords.where((r) => r.status == 'izin' || r.status == 'sakit').length;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6F9),
@@ -461,7 +571,7 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
                     _buildSalesCheckInOutCard(),
                     const SizedBox(height: 16),
                   ] else ...[
-                    _buildAdminSummaryAndFilters(hadirCount, lateCount, izinCount),
+                    _buildAdminSummaryAndFilters(hadirCount, lateCount, izinCount, isOwner: isOwner),
                     const SizedBox(height: 16),
                   ],
 
@@ -662,6 +772,29 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
               ),
             ),
           ],
+          if (!hasCheckedOut) ...[
+            const SizedBox(height: 12),
+            if (_attendancePhoto != null)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.memory(
+                  _attendancePhoto!,
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, error, stackTrace) => const Text('Foto ini tidak dapat ditampilkan.'),
+                ),
+              ),
+            OutlinedButton.icon(
+              onPressed: _isSubmitting || _isPickingPhoto ? null : _pickAttendancePhoto,
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: Text(_attendancePhoto == null ? 'Tambah Foto Absensi' : 'Ganti Foto Absensi'),
+            ),
+            Text(
+              _isSubmitting ? 'Mengambil lokasi dan mengirim bukti…' : 'Lokasi diambil saat Anda mengirim absensi.',
+              style: const TextStyle(fontSize: 12, color: kSecondaryColor),
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
@@ -673,7 +806,9 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  onPressed: (_isSubmitting || hasCheckedIn) ? null : _handleCheckIn,
+                  onPressed: _isSubmitting || _isPickingPhoto || hasCheckedIn || _attendancePhoto == null
+                      ? null
+                      : _handleCheckIn,
                   icon: const Icon(Icons.login_rounded, color: Colors.white, size: 18),
                   label: Text(
                     hasCheckedIn ? 'Sudah Check-In' : 'Check-In',
@@ -690,7 +825,9 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  onPressed: (_isSubmitting || !hasCheckedIn || hasCheckedOut) ? null : _handleCheckOut,
+                  onPressed: _isSubmitting || _isPickingPhoto || !hasCheckedIn || hasCheckedOut || _attendancePhoto == null
+                      ? null
+                      : _handleCheckOut,
                   icon: const Icon(Icons.logout_rounded, color: Colors.white, size: 18),
                   label: Text(
                     hasCheckedOut ? 'Sudah Check-Out' : 'Check-Out',
@@ -705,7 +842,12 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
     );
   }
 
-  Widget _buildAdminSummaryAndFilters(int hadir, int terlambat, int izin) {
+  Widget _buildAdminSummaryAndFilters(
+    int hadir,
+    int terlambat,
+    int izin, {
+    required bool isOwner,
+  }) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -726,10 +868,31 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
             ],
           ),
           const SizedBox(height: 12),
+          if (isOwner) ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Filter Data', style: TextStyle(fontWeight: FontWeight.bold)),
+                TextButton(
+                  onPressed: _selectedSalesFilter == null &&
+                          _selectedPeriod == null &&
+                          _statusFilter == 'Semua'
+                      ? null
+                      : () => setState(() {
+                            _selectedSalesFilter = null;
+                            _selectedPeriod = null;
+                            _statusFilter = 'Semua';
+                          }),
+                  child: const Text('Reset Filter'),
+                ),
+              ],
+            ),
+          ],
           Row(
             children: [
               Expanded(
                 child: DropdownButtonFormField<int?>(
+                  key: ValueKey(_selectedSalesFilter),
                   initialValue: _selectedSalesFilter,
                   isExpanded: true,
                   decoration: InputDecoration(
@@ -750,7 +913,7 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
                 ),
               ),
               const SizedBox(width: 8),
-              OutlinedButton.icon(
+              if (!isOwner) OutlinedButton.icon(
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -767,7 +930,7 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
                     firstDate: DateTime(2024),
                     lastDate: DateTime(2030),
                   );
-                  if (picked != null) {
+                  if (picked != null && mounted) {
                     setState(() {
                       _selectedDateFilter =
                           '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
@@ -775,7 +938,7 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
                   }
                 },
               ),
-              if (_selectedDateFilter != null)
+              if (!isOwner && _selectedDateFilter != null)
                 IconButton(
                   tooltip: 'Reset tanggal',
                   icon: const Icon(Icons.close, size: 18),
@@ -783,9 +946,46 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
                 ),
             ],
           ),
+          if (isOwner) ...[
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.date_range_outlined, size: 18),
+              label: Text(_selectedPeriod == null
+                  ? 'Pilih Rentang Tanggal'
+                  : '${MaterialLocalizations.of(context).formatCompactDate(_selectedPeriod!.start)} – '
+                      '${MaterialLocalizations.of(context).formatCompactDate(_selectedPeriod!.end)}'),
+              onPressed: _pickAttendancePeriod,
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Future<void> _pickAttendancePeriod() async {
+    final now = DateTime.now();
+    var firstDate = DateTime(now.year - 5);
+    var lastDate = DateTime(now.year + 1, 12, 31);
+    for (final record in _records) {
+      final date = DateTime.tryParse(record.tanggal);
+      if (date == null) continue;
+      if (date.isBefore(firstDate)) firstDate = date;
+      if (date.isAfter(lastDate)) lastDate = date;
+    }
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: firstDate,
+      lastDate: lastDate,
+      initialDateRange: _selectedPeriod != null &&
+              !_selectedPeriod!.start.isBefore(firstDate) &&
+              !_selectedPeriod!.end.isAfter(lastDate)
+          ? _selectedPeriod
+          : null,
+      helpText: 'Pilih Rentang Tanggal',
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedPeriod = picked);
+    }
   }
 
   Widget _statChip(String label, String val, Color fg, Color bg) {
@@ -802,6 +1002,51 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
             Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: fg)),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showAttendanceEvidence(AttendanceRecord record, {required bool checkout}) {
+    final evidence = AttendanceService.fetchEvidence(record.id, checkout: checkout);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(checkout ? 'Bukti Check-Out' : 'Bukti Check-In'),
+        content: SizedBox(
+          width: 360,
+          child: FutureBuilder<AttendanceEvidence>(
+            future: evidence,
+            builder: (context, snapshot) {
+              if (snapshot.hasError) {
+                return Text(snapshot.error.toString().replaceFirst('Exception: ', ''));
+              }
+              final data = snapshot.data;
+              if (data == null) {
+                return const SizedBox(height: 100, child: Center(child: CircularProgressIndicator()));
+              }
+              return SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Image.memory(
+                      data.photo,
+                      height: 220,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, error, stackTrace) => const Text('Foto tidak dapat ditampilkan.'),
+                    ),
+                    const SizedBox(height: 12),
+                    const Text('Koordinat Lokasi'),
+                    SelectableText('${data.latitude.toStringAsFixed(6)}, ${data.longitude.toStringAsFixed(6)}'),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Tutup')),
+        ],
       ),
     );
   }
@@ -872,6 +1117,22 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
                 style: const TextStyle(fontSize: 11.5, color: kSecondaryColor),
               ),
             ],
+            if (rec.hasCheckinEvidence || rec.hasCheckoutEvidence)
+              Wrap(
+                spacing: 8,
+                children: [
+                  if (rec.hasCheckinEvidence)
+                    TextButton(
+                      onPressed: () => _showAttendanceEvidence(rec, checkout: false),
+                      child: const Text('Bukti Check-In'),
+                    ),
+                  if (rec.hasCheckoutEvidence)
+                    TextButton(
+                      onPressed: () => _showAttendanceEvidence(rec, checkout: true),
+                      child: const Text('Bukti Check-Out'),
+                    ),
+                ],
+              ),
             if (isManager || rec.correctionsCount > 0) ...[
               const SizedBox(height: 8),
               Row(

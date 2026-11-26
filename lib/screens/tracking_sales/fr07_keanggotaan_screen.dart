@@ -265,7 +265,7 @@ class _FR07KeanggotaanScreenState extends State<FR07KeanggotaanScreen> {
                       final nav = Navigator.of(ctx);
                       final messenger = ScaffoldMessenger.of(context);
                       final authProvider = context.read<AuthProvider>();
-                      final ok = await authProvider.updateMemberProfile(
+                      final updated = await authProvider.updateMemberProfile(
                         targetUserId: member.id!,
                         name: nameCtrl.text.trim(),
                         phone: phoneCtrl.text.trim(),
@@ -276,7 +276,7 @@ class _FR07KeanggotaanScreenState extends State<FR07KeanggotaanScreen> {
                         koordinatorId: isManager && member.isSales ? selectedCoordId : null,
                       );
                       if (!mounted) return;
-                      if (ok) {
+                      if (updated != null) {
                         nav.pop();
                         await _loadUsers();
                         if (!mounted) return;
@@ -446,12 +446,13 @@ class _FR07KeanggotaanScreenState extends State<FR07KeanggotaanScreen> {
   // ============================================================
   // DIALOG DETAIL & RIWAYAT STATUS ANGGOTA
   // ============================================================
-  Future<void> _showMemberDetailDialog(UserModel member) async {
+  Future<void> _showMemberDetailDialog(UserModel initialMember) async {
     final authProvider = context.read<AuthProvider>();
-    final history = member.id != null
-        ? await authProvider.getMembershipStatusHistory(member.id!)
+    final history = initialMember.id != null
+        ? await authProvider.getMembershipStatusHistory(initialMember.id!)
         : <MembershipStatusLog>[];
     if (!mounted) return;
+    var member = initialMember;
 
     String fmtDateTime(DateTime dt) {
       final d = dt.toLocal();
@@ -460,97 +461,238 @@ class _FR07KeanggotaanScreenState extends State<FR07KeanggotaanScreen> {
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: Row(
-          children: [
-            UserAvatar(photoUrl: member.photoUrl, name: member.name, radius: 22),
-            const SizedBox(width: 12),
-            Expanded(
+      builder: (ctx) => StatefulBuilder(
+        builder: (detailCtx, setDetailState) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Row(
+            children: [
+              UserAvatar(photoUrl: member.photoUrl, name: member.name, radius: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      member.name,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: kTextColor),
+                    ),
+                    Text(
+                      '${member.roleDisplayTitle} • ${member.displayKodeSales}',
+                      style: const TextStyle(fontSize: 11.5, color: kSecondaryColor),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 440,
+            child: SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    member.name,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: kTextColor),
+                  const Divider(),
+                  _detailLine('Email', member.email),
+                  _detailLine('Telepon', member.phone ?? '-'),
+                  _detailLine('Alamat', member.alamat ?? '-'),
+                  _detailLine('Tanggal Bergabung', member.tanggalBergabung ?? '-'),
+                  _detailLine('Koordinator', member.koordinatorName ?? '-'),
+                  _detailLine('Status Keanggotaan', member.membershipStatusLabel),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Riwayat Perubahan Status',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: kTextColor),
                   ),
-                  Text(
-                    '${member.roleDisplayTitle} • ${member.displayKodeSales}',
-                    style: const TextStyle(fontSize: 11.5, color: kSecondaryColor),
-                  ),
+                  const SizedBox(height: 6),
+                  if (history.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      child: Text(
+                        'Belum ada riwayat perubahan status.',
+                        style: TextStyle(fontSize: 12, color: kSecondaryColor),
+                      ),
+                    )
+                  else
+                    ...history.map(
+                      (h) => Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${h.oldStatus} → ${h.newStatus}',
+                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: kTextColor),
+                            ),
+                            if (h.reason.isNotEmpty)
+                              Text(h.reason, style: const TextStyle(fontSize: 12, color: kTextColor)),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Oleh: ${h.changedByName} • ${fmtDateTime(h.createdAt)}',
+                              style: const TextStyle(fontSize: 10.5, color: kSecondaryColor),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
+          ),
+          actions: [
+            if (member.id != null &&
+                authProvider.currentUser?.isManager == true &&
+                authProvider.currentUser?.isActive == true)
+              TextButton.icon(
+                onPressed: () async {
+                  final updated = await _showUpdateEmailDialog(member);
+                  if (updated == null || !mounted) return;
+                  setState(() {
+                    final index = _users.indexWhere((user) => user.id == updated.id);
+                    if (index != -1) _users[index] = updated;
+                  });
+                  if (detailCtx.mounted) {
+                    setDetailState(() => member = updated);
+                  }
+                },
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Ubah Email'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Tutup'),
+            ),
           ],
         ),
-        content: SizedBox(
-          width: 440,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Divider(),
-                _detailLine('Email', member.email),
-                _detailLine('Telepon', member.phone ?? '-'),
-                _detailLine('Alamat', member.alamat ?? '-'),
-                _detailLine('Tanggal Bergabung', member.tanggalBergabung ?? '-'),
-                _detailLine('Koordinator', member.koordinatorName ?? '-'),
-                _detailLine('Status Keanggotaan', member.membershipStatusLabel),
-                const SizedBox(height: 12),
-                const Text(
-                  'Riwayat Perubahan Status',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: kTextColor),
-                ),
-                const SizedBox(height: 6),
-                if (history.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 10),
-                    child: Text(
-                      'Belum ada riwayat perubahan status.',
-                      style: TextStyle(fontSize: 12, color: kSecondaryColor),
-                    ),
-                  )
-                else
-                  ...history.map(
-                    (h) => Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${h.oldStatus} → ${h.newStatus}',
-                            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: kTextColor),
-                          ),
-                          if (h.reason.isNotEmpty)
-                            Text(h.reason, style: const TextStyle(fontSize: 12, color: kTextColor)),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Oleh: ${h.changedByName} • ${fmtDateTime(h.createdAt)}',
-                            style: const TextStyle(fontSize: 10.5, color: kSecondaryColor),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-              ],
+      ),
+    );
+  }
+
+  Future<UserModel?> _showUpdateEmailDialog(UserModel member) {
+    final authProvider = context.read<AuthProvider>();
+    var email = member.email;
+    var saving = false;
+    String? error;
+
+    return showDialog<UserModel>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => PopScope(
+          canPop: !saving,
+          child: AlertDialog(
+            title: const Text('Ubah Email'),
+            content: TextFormField(
+              initialValue: member.email,
+              enabled: !saving,
+              keyboardType: TextInputType.emailAddress,
+              autocorrect: false,
+              onChanged: (value) => email = value,
+              decoration: InputDecoration(labelText: 'Email', errorText: error),
             ),
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(ctx),
+                child: const Text('Batal'),
+              ),
+              FilledButton(
+                onPressed: saving
+                    ? null
+                    : () async {
+                        setDialogState(() {
+                          saving = true;
+                          error = null;
+                        });
+                        final updated = await authProvider.updateMemberProfile(
+                          targetUserId: member.id!,
+                          email: email,
+                        );
+                        if (!dialogCtx.mounted) return;
+                        if (updated != null) {
+                          Navigator.pop(ctx, updated);
+                        } else {
+                          setDialogState(() {
+                            saving = false;
+                            error = authProvider.errorMessage ??
+                                'Gagal memperbarui email.';
+                          });
+                        }
+                      },
+                child: Text(saving ? 'Menyimpan…' : 'Simpan'),
+              ),
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Tutup'),
-          ),
-        ],
       ),
+    );
+  }
+
+  Future<void> _confirmDeleteMember(UserModel member) async {
+    final authProvider = context.read<AuthProvider>();
+    var deleting = false;
+    String? error;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogCtx, setDialogState) => PopScope(
+          canPop: !deleting,
+          child: AlertDialog(
+            title: const Text('Hapus Anggota Sales?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Hapus akun ${member.name} dari daftar keanggotaan?'),
+                if (error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(error!, style: TextStyle(color: Theme.of(ctx).colorScheme.error)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: deleting ? null : () => Navigator.pop(ctx),
+                child: const Text('Batal'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+                onPressed: deleting
+                    ? null
+                    : () async {
+                        setDialogState(() {
+                          deleting = true;
+                          error = null;
+                        });
+                        final deleted = await authProvider.deleteSalesMember(member.id!);
+                        if (!dialogCtx.mounted) return;
+                        if (deleted) {
+                          Navigator.pop(ctx, true);
+                        } else {
+                          setDialogState(() {
+                            deleting = false;
+                            error = authProvider.errorMessage ?? 'Gagal menghapus anggota Sales.';
+                          });
+                        }
+                      },
+                child: Text(deleting ? 'Menghapus…' : 'Hapus'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _users.removeWhere((user) => user.id == member.id));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Anggota Sales berhasil dihapus.')),
     );
   }
 
@@ -983,6 +1125,12 @@ class _FR07KeanggotaanScreenState extends State<FR07KeanggotaanScreen> {
                   ],
                 ),
               ),
+              if (isManager && currentUser?.isActive == true && user.isSales && user.id != null)
+                IconButton(
+                  tooltip: 'Hapus Anggota Sales',
+                  icon: Icon(Icons.delete_outline, color: Colors.red.shade700),
+                  onPressed: () => _confirmDeleteMember(user),
+                ),
               if (isManager)
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert, color: kSecondaryColor),

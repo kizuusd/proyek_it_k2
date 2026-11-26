@@ -264,9 +264,10 @@ class AuthProvider extends ChangeNotifier {
   }
 
   // FR07 | Perbarui profil anggota (oleh Admin/Owner atau Sales sendiri)
-  Future<bool> updateMemberProfile({
+  Future<UserModel?> updateMemberProfile({
     required int targetUserId,
     String? name,
+    String? email,
     String? phone,
     String? alamat,
     String? kodeSales,
@@ -275,7 +276,7 @@ class AuthProvider extends ChangeNotifier {
   }) async {
     if (_currentUser == null) {
       _errorMessage = 'Tidak ada sesi pengguna aktif.';
-      return false;
+      return null;
     }
     _errorMessage = null;
     try {
@@ -283,6 +284,7 @@ class AuthProvider extends ChangeNotifier {
         targetUserId: targetUserId,
         actor: _currentUser!,
         name: name,
+        email: email,
         phone: phone,
         alamat: alamat,
         kodeSales: kodeSales,
@@ -294,10 +296,29 @@ class AuthProvider extends ChangeNotifier {
         _currentUser = updated;
       }
       notifyListeners();
-      return true;
+      return updated;
     } catch (e) {
       _errorMessage = _cleanErrorMessage(e.toString());
       notifyListeners();
+      return null;
+    }
+  }
+
+  Future<bool> deleteSalesMember(int targetUserId) async {
+    final actor = _currentUser;
+    if (actor == null) {
+      _errorMessage = 'Tidak ada sesi pengguna aktif.';
+      return false;
+    }
+    _errorMessage = null;
+    try {
+      await _authService.deleteSalesMember(
+        targetUserId: targetUserId,
+        actor: actor,
+      );
+      return true;
+    } catch (e) {
+      _errorMessage = _cleanErrorMessage(e.toString());
       return false;
     }
   }

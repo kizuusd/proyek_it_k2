@@ -25,6 +25,7 @@ class AuthService {
     scopes: ['email', 'profile'],
   );
   static const String _mockUsersStorageKey = 'auth_mock_users';
+  final Map<int, String> _deletedMemberEmails = {};
   static const String _mockStatusLogsKey = 'auth_mock_membership_logs';
   static const String _lastResolvedUrlKey = 'auth_last_resolved_base_url';
   Future<void>? _mockUsersLoad;
@@ -51,7 +52,7 @@ class AuthService {
     }
     return const [
       baseUrl,
-      'http://localhost:8000/api',
+      'http://192.168.177.1:8000/api',
       lanBaseUrl,
     ];
   }
@@ -317,8 +318,14 @@ class AuthService {
         throw const FormatException('Data akun lokal tidak valid.');
       }
       final existingIndex = _mockUsers.indexWhere(
-        (user) => (user['email'] as String).toLowerCase() == email.toLowerCase(),
+        (user) => user['id'] == userData['id'] ||
+            (user['email'] as String).toLowerCase() == email.toLowerCase(),
       );
+      if (userData['_deleted'] == true && userData['id'] is int) {
+        _deletedMemberEmails[userData['id'] as int] = email.toLowerCase();
+        if (existingIndex >= 0) _mockUsers.removeAt(existingIndex);
+        continue;
+      }
       if (existingIndex >= 0) {
         _mockUsers[existingIndex] = userData;
       } else {
@@ -334,7 +341,16 @@ class AuthService {
         .toList();
     final saved = await prefs.setString(
       _mockUsersStorageKey,
-      jsonEncode(storedUsers),
+      jsonEncode([
+        ...storedUsers,
+        for (final member in _deletedMemberEmails.entries)
+          {
+            'id': member.key,
+            'email': member.value,
+            '_deleted': true,
+            '_persist_locally': true,
+          },
+      ]),
     );
     if (!saved) {
       throw Exception('Akun gagal disimpan di perangkat. Silakan coba lagi.');
@@ -591,6 +607,7 @@ class AuthService {
     if (foundIndex == -1) {
       final cachedUser = await _sessionService.getUser();
       if (cachedUser != null &&
+          !_deletedMemberEmails.containsKey(cachedUser.id) &&
           ((targetEmail.isNotEmpty &&
                   (cachedUser.email.toLowerCase() == targetEmail ||
                       cachedUser.googleEmail?.toLowerCase() == targetEmail)) ||
@@ -717,21 +734,26 @@ class AuthService {
 
     final isExist = _mockUsers.any(
       (u) => (u['email'] as String).toLowerCase() == cleanEmail,
-    );
+    ) || _deletedMemberEmails.containsValue(cleanEmail);
 
     if (isExist) {
       throw Exception('Email "$cleanEmail" sudah terdaftar. Silakan gunakan email lain.');
     }
 
+    final nextId = [
+      0,
+      ..._mockUsers.map((u) => u['id']).whereType<int>(),
+      ..._deletedMemberEmails.keys,
+    ].reduce((a, b) => a > b ? a : b) + 1;
     final newUserData = {
-      'id': _mockUsers.length + 1,
+      'id': nextId,
       'name': newSalesUser.name.trim(),
       'email': cleanEmail,
       'password': password,
       'phone': newSalesUser.phone?.trim(),
       'role': 'sales', // Wajib role sales
       'is_active': 1,  // Status aktif
-      'google_id': linkGoogle ? 'google_oauth_${_mockUsers.length + 1}' : null,
+      'google_id': linkGoogle ? 'google_oauth_$nextId' : null,
       'created_by': managerUser.name,
       'last_login_at': null,
       '_persist_locally': true,
@@ -757,7 +779,7 @@ class AuthService {
 
   // Dapatkan seluruh data anggota untuk panel keanggotaan
   Future<List<UserModel>> getAllUsers() async {
-    if (!shouldUseMock) {
+    if (!await _usesLocalMembership()) {
       try {
         final response = await requestWithFailover(
           (base) => http
@@ -1078,12 +1100,23 @@ class AuthService {
     required int targetUserId,
     required UserModel actor,
     String? name,
+    String? email,
     String? phone,
     String? alamat,
     String? kodeSales,
     String? tanggalBergabung,
     int? koordinatorId,
   }) async {
+    final cleanEmail = email?.trim().toLowerCase();
+    if (cleanEmail != null) {
+      if (!actor.isManager || !actor.isActive) {
+        throw Exception('Akses ditolak: Hanya Admin dan Owner yang dapat mengubah email anggota.');
+      }
+      if (cleanEmail.length > 255 ||
+          !RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(cleanEmail)) {
+        throw Exception('Format email tidak valid.');
+      }
+    }
     if (!actor.isManager && actor.id != targetUserId) {
       throw Exception('Akses ditolak: Anda hanya dapat mengubah informasi pribadi Anda sendiri.');
     }
@@ -1104,6 +1137,7 @@ class AuthService {
                   'actor_id': actor.id,
                   'actor_email': actor.email,
                   if (name != null) 'name': name.trim(),
+                  if (cleanEmail != null) 'email': cleanEmail,
                   if (phone != null) 'phone': phone.trim(),
                   if (alamat != null) 'alamat': alamat.trim(),
                   if (actor.isManager && kodeSales != null) 'kode_sales': kodeSales.trim().toUpperCase(),
@@ -1116,6 +1150,10 @@ class AuthService {
         if (response.statusCode == 200) {
           final data = jsonDecode(response.body);
           final updated = UserModel.fromJson(Map<String, dynamic>.from(data['user']));
+          if (cleanEmail != null &&
+              (updated.id != targetUserId || updated.email != cleanEmail)) {
+            throw Exception('Server belum menyimpan email baru. Pastikan backend sudah diperbarui.');
+          }
           await _syncLocalMockUser(updated);
           return updated;
         } else {
@@ -1123,7 +1161,7 @@ class AuthService {
           throw Exception(errBody['message'] ?? 'Gagal memperbarui data anggota.');
         }
       } catch (e) {
-        if (e.toString().contains('sudah digunakan') || e.toString().contains('Akses ditolak')) {
+        if (cleanEmail != null || e.toString().contains('sudah digunakan') || e.toString().contains('Akses ditolak')) {
           rethrow;
         }
       }
@@ -1133,6 +1171,12 @@ class AuthService {
     final idx = _mockUsers.indexWhere((u) => u['id'] == targetUserId);
     if (idx == -1) {
       throw Exception('Data anggota tidak ditemukan.');
+    }
+    if (cleanEmail != null &&
+        (_deletedMemberEmails.containsValue(cleanEmail) ||
+            _mockUsers.any((u) => u['id'] != targetUserId &&
+                (u['email'] as String).toLowerCase() == cleanEmail))) {
+      throw Exception('Email sudah digunakan oleh akun lain.');
     }
 
     if (actor.isManager && kodeSales != null && kodeSales.trim().isNotEmpty) {
@@ -1148,6 +1192,9 @@ class AuthService {
 
     if (name != null && name.trim().isNotEmpty) {
       _mockUsers[idx]['name'] = name.trim();
+    }
+    if (cleanEmail != null) {
+      _mockUsers[idx]['email'] = cleanEmail;
     }
     if (phone != null) {
       _mockUsers[idx]['phone'] = phone.trim();
@@ -1171,6 +1218,71 @@ class AuthService {
     final updated = UserModel.fromJson(_mockUsers[idx]);
     await _syncLocalSessionIfSameUser(updated);
     return updated;
+  }
+
+  Future<void> deleteSalesMember({
+    required int targetUserId,
+    required UserModel actor,
+  }) async {
+    if (!actor.isManager || !actor.isActive) {
+      throw Exception('Akses ditolak: Hanya Admin dan Owner yang dapat menghapus anggota Sales.');
+    }
+
+    final useLocalMembership = await _usesLocalMembership();
+    if (!useLocalMembership) {
+      final token = await _sessionService.getToken();
+      if (token == null || token.isEmpty) {
+        throw Exception('Sesi Admin atau Owner tidak tersedia. Masuk kembali untuk menghapus anggota Sales.');
+      }
+      final response = await requestWithFailover(
+        (base) => http.delete(
+          Uri.parse('$base/users/$targetUserId/member'),
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+        ).timeout(const Duration(seconds: 6)),
+      );
+      switch (response.statusCode) {
+        case 204:
+          break;
+        case 401:
+        case 403:
+          throw Exception('Sesi tidak diizinkan menghapus anggota Sales. Masuk kembali sebagai Admin atau Owner.');
+        case 404:
+          throw Exception('Anggota Sales atau fitur hapus tidak ditemukan di server.');
+        default:
+          throw Exception('Gagal menghapus anggota Sales di server.');
+      }
+    }
+
+    await _ensureMockUsersLoaded();
+    final currentIndex = _mockUsers.indexWhere((user) => user['id'] == targetUserId);
+    if (useLocalMembership && !_deletedMemberEmails.containsKey(targetUserId) &&
+        (currentIndex == -1 || !UserModel.fromJson(_mockUsers[currentIndex]).isSales)) {
+      throw Exception('Anggota Sales tidak ditemukan.');
+    }
+    if (currentIndex == -1) return;
+    final removed = _mockUsers.removeAt(currentIndex);
+    _deletedMemberEmails[targetUserId] = (removed['email'] as String).toLowerCase();
+    try {
+      await _saveMockUsers();
+    } catch (_) {
+      if (useLocalMembership) {
+        _mockUsers.insert(currentIndex, removed);
+        _deletedMemberEmails.remove(targetUserId);
+        rethrow;
+      }
+      // Server sudah menghapus akun. Tombstone tetap berlaku selama sesi ini.
+    }
+  }
+
+  Future<bool> _usesLocalMembership() async {
+    if (shouldUseMock) return true;
+    final token = await _sessionService.getToken();
+    return token != null &&
+        (token.startsWith('mock_bearer_token_') ||
+            token.startsWith('google_oauth_token_'));
   }
 
   Future<UserModel> updateMembershipStatus({

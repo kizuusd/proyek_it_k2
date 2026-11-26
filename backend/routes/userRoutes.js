@@ -472,6 +472,7 @@ router.put('/:id/member', async (req, res) => {
     const targetId = Number(req.params.id);
     const {
       name,
+      email,
       phone,
       alamat,
       kode_sales,
@@ -479,8 +480,13 @@ router.put('/:id/member', async (req, res) => {
       koordinator_id,
     } = req.body;
 
-    const actor = await resolveActor(req);
+    const actor = email === undefined
+      ? await resolveActor(req)
+      : await resolveAuthenticatedUser(req);
     const isMgr = isManagerRole(actor);
+    if (email !== undefined && (!isMgr || !actor.is_active)) {
+      return res.status(403).json({ message: 'Akses ditolak: Hanya Admin dan Owner yang dapat mengubah email anggota.' });
+    }
     if (actor && !isMgr && Number(actor.id) !== targetId) {
       return res.status(403).json({
         message: 'Akses ditolak: Anda hanya dapat mengubah informasi pribadi Anda sendiri.',
@@ -495,6 +501,20 @@ router.put('/:id/member', async (req, res) => {
       return res.status(404).json({ message: 'Data anggota tidak ditemukan.' });
     }
     const target = targetRows[0];
+    let cleanEmail = null;
+    if (email !== undefined) {
+      cleanEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
+      if (cleanEmail.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({ message: 'Format email tidak valid.' });
+      }
+      const [duplicates] = await pool.query(
+        'SELECT id FROM users WHERE LOWER(email) = ? AND id != ? LIMIT 1',
+        [cleanEmail, targetId]
+      );
+      if (duplicates.length > 0) {
+        return res.status(409).json({ message: 'Email sudah digunakan oleh akun lain.' });
+      }
+    }
 
     const updatedName = name !== undefined && String(name).trim() !== '' ? String(name).trim() : target.name;
     const updatedPhone = phone !== undefined ? (String(phone).trim() || null) : target.phone;
@@ -527,12 +547,25 @@ router.put('/:id/member', async (req, res) => {
       }
     }
 
-    await pool.query(
+    const [result] = await pool.query(
       `UPDATE users
-       SET name = ?, phone = ?, alamat = ?, kode_sales = ?, tanggal_bergabung = ?, koordinator_id = ?
-       WHERE id = ?`,
-      [updatedName, updatedPhone, updatedAlamat, updatedKodeSales, updatedJoinDate, updatedKoordinator, targetId]
+       SET name = COALESCE(?, name), phone = IF(?, ?, phone), alamat = IF(?, ?, alamat),
+           kode_sales = IF(?, ?, kode_sales), tanggal_bergabung = IF(?, ?, tanggal_bergabung),
+           koordinator_id = IF(?, ?, koordinator_id), email = COALESCE(?, email)
+       WHERE id = ? AND deleted_at IS NULL`,
+      [
+        name === undefined ? null : updatedName,
+        phone !== undefined, updatedPhone,
+        alamat !== undefined, updatedAlamat,
+        (isMgr || !actor) && kode_sales !== undefined, updatedKodeSales,
+        (isMgr || !actor) && tanggal_bergabung !== undefined, updatedJoinDate,
+        (isMgr || !actor) && koordinator_id !== undefined, updatedKoordinator,
+        cleanEmail, targetId,
+      ]
     );
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Data anggota tidak ditemukan.' });
+    }
 
     try {
       await pool.query(
@@ -556,8 +589,45 @@ router.put('/:id/member', async (req, res) => {
       user: formatUser(updatedRows[0]),
     });
   } catch (error) {
+    if (req.body?.email !== undefined && error.code === 'ER_DUP_ENTRY') {
+      return res.status(409).json({ message: 'Email sudah digunakan oleh akun lain.' });
+    }
     console.error('[PUT /api/users/:id/member] Error:', error);
     return res.status(500).json({ message: 'Gagal memperbarui data anggota: ' + error.message });
+  }
+});
+
+router.delete('/:id/member', async (req, res) => {
+  try {
+    const actor = await resolveAuthenticatedUser(req);
+    if (!isManagerRole(actor) || !actor.is_active) {
+      return res.status(403).json({ message: 'Akses ditolak: Hanya Admin dan Owner yang dapat menghapus anggota Sales.' });
+    }
+    await ensureUsersSchema();
+    const targetId = Number(req.params.id);
+    if (!Number.isSafeInteger(targetId) || targetId <= 0) {
+      return res.status(400).json({ message: 'ID anggota tidak valid.' });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE users
+       SET deleted_at = NOW(), is_active = 0, membership_status = 'nonaktif'
+       WHERE id = ? AND LOWER(role) = 'sales' AND deleted_at IS NULL`,
+      [targetId]
+    );
+    if (result.affectedRows === 0) {
+      const [deleted] = await pool.query(
+        "SELECT id FROM users WHERE id = ? AND LOWER(role) = 'sales' AND deleted_at IS NOT NULL",
+        [targetId]
+      );
+      if (deleted.length === 0) {
+        return res.status(404).json({ message: 'Anggota Sales tidak ditemukan.' });
+      }
+    }
+    return res.status(204).end();
+  } catch (error) {
+    console.error('[DELETE /api/users/:id/member] Error:', error);
+    return res.status(500).json({ message: 'Gagal menghapus anggota Sales.' });
   }
 });
 
