@@ -1,9 +1,30 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/widgets.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_service.dart';
 import 'session_service.dart';
+
+class AttendanceEvidence {
+  static const maxPhotoBytes = 900 * 1024;
+
+  final Uint8List photo;
+  final double latitude;
+  final double longitude;
+
+  const AttendanceEvidence({
+    required this.photo,
+    required this.latitude,
+    required this.longitude,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'photo': base64Encode(photo),
+        'latitude': latitude,
+        'longitude': longitude,
+      };
+}
 
 class AttendanceRecord {
   final int id;
@@ -15,6 +36,8 @@ class AttendanceRecord {
   final DateTime? checkoutAt;
   final String? checkoutTime;
   final int? durasiKerja;
+  final bool hasCheckinEvidence;
+  final bool hasCheckoutEvidence;
   String status; // hadir, terlambat, izin, sakit, alfa
   String? catatanAdmin;
   int correctionsCount;
@@ -29,6 +52,8 @@ class AttendanceRecord {
     this.checkoutAt,
     this.checkoutTime,
     this.durasiKerja,
+    this.hasCheckinEvidence = false,
+    this.hasCheckoutEvidence = false,
     required this.status,
     this.catatanAdmin,
     this.correctionsCount = 0,
@@ -69,6 +94,8 @@ class AttendanceRecord {
       checkoutAt: json['checkout_at'] != null ? DateTime.tryParse(json['checkout_at'].toString()) : null,
       checkoutTime: json['checkout_time']?.toString(),
       durasiKerja: json['durasi_kerja'] != null ? int.tryParse(json['durasi_kerja'].toString()) : null,
+      hasCheckinEvidence: json['has_checkin_evidence'] == true,
+      hasCheckoutEvidence: json['has_checkout_evidence'] == true,
       status: json['status']?.toString() ?? 'alfa',
       catatanAdmin: json['catatan_admin']?.toString(),
       correctionsCount: int.tryParse(json['corrections_count']?.toString() ?? '0') ?? 0,
@@ -85,6 +112,8 @@ class AttendanceRecord {
         if (checkoutAt != null) 'checkout_at': checkoutAt!.toIso8601String(),
         if (checkoutTime != null) 'checkout_time': checkoutTime,
         if (durasiKerja != null) 'durasi_kerja': durasiKerja,
+        'has_checkin_evidence': hasCheckinEvidence,
+        'has_checkout_evidence': hasCheckoutEvidence,
         'status': status,
         if (catatanAdmin != null) 'catatan_admin': catatanAdmin,
         'corrections_count': correctionsCount,
@@ -306,6 +335,7 @@ class AttendanceService {
     required int salesId,
     required String salesName,
     required String salesEmail,
+    AttendanceEvidence? evidence,
     bool isActiveAccount = true,
     String? catatan,
   }) async {
@@ -314,38 +344,7 @@ class AttendanceService {
     }
 
     if (!_isTestEnv) {
-      try {
-        await AuthService.resolveBaseUrl();
-        final response = await http
-            .post(
-              Uri.parse('${AuthService.activeBaseUrl}/attendances/checkin'),
-              headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-              body: jsonEncode({
-                'sales_id': salesId,
-                'sales_email': salesEmail,
-                if (catatan != null && catatan.trim().isNotEmpty) 'catatan': catatan.trim(),
-              }),
-            )
-            .timeout(const Duration(seconds: 5));
-        final body = jsonDecode(response.body);
-        if (response.statusCode == 201 || response.statusCode == 200) {
-          final record = AttendanceRecord.fromJson(Map<String, dynamic>.from(body['data']));
-          final all = await loadCached();
-          all.removeWhere((r) => r.salesId == salesId && r.tanggal == record.tanggal);
-          all.insert(0, record);
-          await saveCached(all);
-          return record;
-        } else {
-          throw Exception(body['message'] ?? 'Gagal melakukan check-in.');
-        }
-      } catch (e) {
-        if (e.toString().contains('sudah melakukan') ||
-            e.toString().contains('nonaktif') ||
-            e.toString().contains('ditangguhkan') ||
-            e.toString().contains('Gagal')) {
-          rethrow;
-        }
-      }
+      return _submitAttendance('checkin', salesId, evidence, catatan: catatan);
     }
 
     final all = await loadCached();
@@ -365,6 +364,7 @@ class AttendanceService {
       checkinAt: now,
       checkinTime: _hhmm(now),
       status: statusMasuk,
+      hasCheckinEvidence: evidence != null,
       catatanAdmin: catatan?.trim().isNotEmpty == true ? catatan!.trim() : null,
     );
     all.insert(0, record);
@@ -375,43 +375,10 @@ class AttendanceService {
   static Future<AttendanceRecord> checkOut({
     required int salesId,
     required String salesEmail,
+    AttendanceEvidence? evidence,
   }) async {
     if (!_isTestEnv) {
-      try {
-        await AuthService.resolveBaseUrl();
-        final response = await http
-            .post(
-              Uri.parse('${AuthService.activeBaseUrl}/attendances/checkout'),
-              headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
-              body: jsonEncode({
-                'sales_id': salesId,
-                'sales_email': salesEmail,
-              }),
-            )
-            .timeout(const Duration(seconds: 5));
-        final body = jsonDecode(response.body);
-        if (response.statusCode == 200) {
-          final record = AttendanceRecord.fromJson(Map<String, dynamic>.from(body['data']));
-          final all = await loadCached();
-          final idx = all.indexWhere((r) => r.salesId == salesId && r.tanggal == record.tanggal);
-          if (idx != -1) {
-            all[idx] = record;
-          } else {
-            all.insert(0, record);
-          }
-          await saveCached(all);
-          return record;
-        } else {
-          throw Exception(body['message'] ?? 'Gagal melakukan check-out.');
-        }
-      } catch (e) {
-        if (e.toString().contains('belum melakukan') ||
-            e.toString().contains('sudah melakukan') ||
-            e.toString().contains('lebih awal') ||
-            e.toString().contains('Gagal')) {
-          rethrow;
-        }
-      }
+      return _submitAttendance('checkout', salesId, evidence);
     }
 
     final all = await loadCached();
@@ -440,12 +407,81 @@ class AttendanceService {
       checkoutTime: _hhmm(now),
       durasiKerja: durasi,
       status: existing.status,
+      hasCheckinEvidence: existing.hasCheckinEvidence,
+      hasCheckoutEvidence: evidence != null,
       catatanAdmin: existing.catatanAdmin,
       correctionsCount: existing.correctionsCount,
     );
     all[idx] = updated;
     await saveCached(all);
     return updated;
+  }
+
+  static Future<AttendanceRecord> _submitAttendance(
+    String phase,
+    int salesId,
+    AttendanceEvidence? evidence, {
+    String? catatan,
+  }) async {
+    if (evidence == null) {
+      throw Exception('Sertakan foto dan lokasi untuk menyimpan absensi.');
+    }
+    final token = await SessionService().getToken();
+    if (token == null) throw Exception('Masuk kembali untuk melakukan absensi.');
+    final payload = jsonEncode({
+      'sales_id': salesId,
+      ...evidence.toJson(),
+      if (catatan != null && catatan.trim().isNotEmpty) 'catatan': catatan.trim(),
+    });
+    final response = await AuthService.requestWithFailover(
+      (base) => http.post(
+        Uri.parse('$base/attendances/$phase'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: payload,
+      ).timeout(const Duration(seconds: 15)),
+    );
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw Exception(body['message'] ?? 'Gagal menyimpan absensi.');
+    }
+    final record = AttendanceRecord.fromJson(Map<String, dynamic>.from(body['data']));
+    if (phase == 'checkin' ? !record.hasCheckinEvidence : !record.hasCheckoutEvidence) {
+      throw Exception('Server belum mengonfirmasi penyimpanan foto dan lokasi.');
+    }
+    try {
+      final cached = await loadCached();
+      cached.removeWhere((item) => item.salesId == salesId && item.tanggal == record.tanggal);
+      cached.insert(0, record);
+      await saveCached(cached);
+    } catch (_) {
+      // Server sudah menyimpan absensi.
+    }
+    return record;
+  }
+
+  static Future<AttendanceEvidence> fetchEvidence(int id, {required bool checkout}) async {
+    final token = await SessionService().getToken();
+    if (token == null) throw Exception('Masuk kembali untuk melihat bukti absensi.');
+    final phase = checkout ? 'checkout' : 'checkin';
+    final response = await AuthService.requestWithFailover(
+      (base) => http.get(
+        Uri.parse('$base/attendances/$id/evidence/$phase'),
+        headers: {'Authorization': 'Bearer $token', 'Accept': 'application/json'},
+      ).timeout(const Duration(seconds: 15)),
+    );
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(body['message'] ?? 'Gagal memuat bukti absensi.');
+    }
+    return AttendanceEvidence(
+      photo: base64Decode(body['photo'] as String),
+      latitude: (body['latitude'] as num).toDouble(),
+      longitude: (body['longitude'] as num).toDouble(),
+    );
   }
 
   static Future<AttendanceRecord> correctAttendance({
@@ -534,6 +570,8 @@ class AttendanceService {
       checkoutTime: newOut != null ? _hhmm(newOut) : null,
       durasiKerja: dur,
       status: status,
+      hasCheckinEvidence: existing.hasCheckinEvidence,
+      hasCheckoutEvidence: existing.hasCheckoutEvidence,
       catatanAdmin: reason.trim(),
       correctionsCount: existing.correctionsCount + 1,
     );

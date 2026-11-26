@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
@@ -267,6 +269,146 @@ void main() {
       expect(logs.first.reason, 'Evaluasi bulanan');
     });
 
+    test('FR07 email edits survive reload and keep the same login account', () async {
+      final service = AuthService();
+      final users = await service.getAllUsers();
+      final admin = users.firstWhere((user) => user.isAdmin);
+      final sales = users.firstWhere((user) => user.isSales);
+
+      await expectLater(
+        service.updateMemberProfile(
+          targetUserId: sales.id!,
+          actor: sales,
+          email: 'new@example.com',
+        ),
+        throwsException,
+      );
+      await expectLater(
+        service.updateMemberProfile(
+          targetUserId: sales.id!,
+          actor: admin,
+          email: admin.email.toUpperCase(),
+        ),
+        throwsException,
+      );
+      await service.updateMemberProfile(
+        targetUserId: sales.id!,
+        actor: admin,
+        email: ' New@Example.com ',
+      );
+
+      final reloaded = AuthService();
+      await expectLater(
+        reloaded.loginWithEmail(sales.email, 'password123'),
+        throwsException,
+      );
+      final login = await reloaded.loginWithEmail('new@example.com', 'password123');
+      expect(login.user.id, sales.id);
+      expect(login.user.email, 'new@example.com');
+    });
+
+    test('FR07 only managers can delete Sales and deleted accounts stay removed', () async {
+      final service = AuthService();
+      final users = await service.getAllUsers();
+      final owner = users.firstWhere((user) => user.isSuperAdmin);
+      final admin = users.firstWhere((user) => user.isAdmin);
+      final sales = users.where((user) => user.isSales).toList();
+
+      await expectLater(
+        service.deleteSalesMember(targetUserId: sales.first.id!, actor: sales.last),
+        throwsException,
+      );
+      await expectLater(
+        service.deleteSalesMember(targetUserId: owner.id!, actor: admin),
+        throwsException,
+      );
+      await service.deleteSalesMember(targetUserId: sales.first.id!, actor: admin);
+      await service.deleteSalesMember(targetUserId: sales.last.id!, actor: owner);
+
+      final reloaded = AuthService();
+      final remainingIds = (await reloaded.getAllUsers()).map((user) => user.id);
+      expect(remainingIds, isNot(contains(sales.first.id)));
+      expect(remainingIds, isNot(contains(sales.last.id)));
+      await expectLater(
+        reloaded.loginWithEmail(sales.first.email, 'password123'),
+        throwsException,
+      );
+    });
+
+    testWidgets('FR07 shows the saved email in the open detail dialog and list', (tester) async {
+      tester.view.physicalSize = const Size(1280, 1200);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final provider = AuthProvider();
+      await tester.runAsync(() => provider.login('admin@majubersama.com', 'password123'));
+      await tester.runAsync(() => tester.pumpWidget(
+            ChangeNotifierProvider<AuthProvider>.value(
+              value: provider,
+              child: const MaterialApp(home: FR07KeanggotaanScreen()),
+            ),
+          ));
+      await tester.pumpAndSettle();
+
+      const oldEmail = 'sales@majubersama.com';
+      const newEmail = 'updated-sales@example.com';
+      await tester.runAsync(() => tester.tap(find.text(oldEmail)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ubah Email'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField), newEmail);
+      await tester.runAsync(() => tester.tap(find.text('Simpan')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Riwayat Perubahan Status'), findsOneWidget);
+      expect(find.descendant(of: find.byType(AlertDialog), matching: find.text(newEmail)), findsOneWidget);
+      await tester.tap(find.text('Tutup'));
+      await tester.pumpAndSettle();
+      expect(find.text(newEmail), findsOneWidget);
+      expect(find.text(oldEmail), findsNothing);
+    });
+
+    for (final role in ['admin', 'owner']) {
+      testWidgets('FR07 $role can delete Sales from the fixed card action', (tester) async {
+        tester.view.physicalSize = const Size(1280, 1200);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final provider = AuthProvider();
+        await tester.runAsync(() async {
+          expect(await provider.login('$role@majubersama.com', 'password123'), isTrue);
+          await tester.pumpWidget(
+            ChangeNotifierProvider<AuthProvider>.value(
+              value: provider,
+              child: const MaterialApp(home: FR07KeanggotaanScreen()),
+            ),
+          );
+        });
+        await tester.pumpAndSettle();
+
+        const salesEmail = 'sales@majubersama.com';
+        final card = find.ancestor(of: find.text(salesEmail), matching: find.byType(Card));
+        final delete = find.descendant(
+          of: card,
+          matching: find.byTooltip('Hapus Anggota Sales'),
+        );
+        await tester.tap(delete);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Batal'));
+        await tester.pumpAndSettle();
+        expect(find.text(salesEmail), findsOneWidget);
+
+        await tester.tap(delete);
+        await tester.pumpAndSettle();
+        await tester.runAsync(() => tester.tap(find.text('Hapus')));
+        await tester.pumpAndSettle();
+        expect(find.text(salesEmail), findsNothing);
+        expect(find.text('Anggota Sales berhasil dihapus.'), findsOneWidget);
+      });
+    }
+
     testWidgets('FR07 shows personal membership card for Sales', (WidgetTester tester) async {
       final salesProvider = AuthProvider();
       await tester.runAsync(() async {
@@ -286,19 +428,32 @@ void main() {
 
       expect(find.text('Keanggotaan Saya'), findsOneWidget);
       expect(find.text('Edit Informasi Pribadi'), findsOneWidget);
+      expect(find.byTooltip('Hapus Anggota Sales'), findsNothing);
     });
   });
 
   group('Doc 05 — Absensi Sales', () {
     test('Check-in prevents duplicates, check-out calculates duration, Admin can correct with audit trail',
         () async {
+      final evidence = AttendanceEvidence(
+        photo: Uint8List.fromList([1, 2, 3]),
+        latitude: -7.25,
+        longitude: 112.75,
+      );
+      expect(evidence.toJson(), {
+        'photo': 'AQID',
+        'latitude': -7.25,
+        'longitude': 112.75,
+      });
       final rec = await AttendanceService.checkIn(
         salesId: 3,
         salesName: 'Muhammad Ulil Abshor',
         salesEmail: 'sales@majubersama.com',
         catatan: 'Masuk pagi',
+        evidence: evidence,
       );
       expect(rec.checkinTime, isNotNull);
+      expect(rec.hasCheckinEvidence, isTrue);
 
       expect(
         () => AttendanceService.checkIn(
@@ -312,9 +467,11 @@ void main() {
       final outRec = await AttendanceService.checkOut(
         salesId: 3,
         salesEmail: 'sales@majubersama.com',
+        evidence: evidence,
       );
       expect(outRec.checkoutTime, isNotNull);
       expect(outRec.durasiKerja, isNotNull);
+      expect(outRec.hasCheckoutEvidence, isTrue);
 
       final corrected = await AttendanceService.correctAttendance(
         attendanceId: outRec.id,
@@ -327,11 +484,42 @@ void main() {
         reason: 'Koreksi jam kerja sesuai surat tugas',
       );
       expect(corrected.status, 'hadir');
+      expect(corrected.hasCheckinEvidence, isTrue);
+      expect(corrected.hasCheckoutEvidence, isTrue);
       expect(corrected.durasiKerja, 540);
 
       final corrLogs = await AttendanceService.fetchCorrections(outRec.id);
       expect(corrLogs.length, 1);
       expect(corrLogs.first.reason, 'Koreksi jam kerja sesuai surat tugas');
+    });
+
+    testWidgets('FR08 Owner can filter attendance and reset the results', (tester) async {
+      final provider = AuthProvider();
+      await tester.runAsync(() async {
+        expect(await provider.login('owner@majubersama.com', 'password123'), isTrue);
+        await tester.pumpWidget(
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: provider,
+            child: const MaterialApp(home: FR08AbsensiScreen()),
+          ),
+        );
+      });
+      await tester.pumpAndSettle();
+
+      expect(find.text('Daftar Kehadiran Sales (2)'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Terlambat'));
+      await tester.pumpAndSettle();
+      expect(find.text('Daftar Kehadiran Sales (1)'), findsOneWidget);
+      expect(find.text('Ahmad Hidayat'), findsOneWidget);
+      expect(find.text('Muhammad Ulil Abshor'), findsNothing);
+
+      await tester.tap(find.text('Reset Filter'));
+      await tester.pumpAndSettle();
+      expect(find.text('Daftar Kehadiran Sales (2)'), findsOneWidget);
+
+      await tester.tap(find.text('Pilih Rentang Tanggal'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DateRangePickerDialog), findsOneWidget);
     });
 
     testWidgets('FR08 renders Check-In and Check-Out buttons for Sales', (WidgetTester tester) async {
@@ -351,6 +539,10 @@ void main() {
       expect(find.text('Status Absensi Hari Ini'), findsOneWidget);
       expect(find.widgetWithText(ElevatedButton, 'Check-In'), findsOneWidget);
       expect(find.widgetWithText(ElevatedButton, 'Check-Out'), findsOneWidget);
+      expect(find.text('Tambah Foto Absensi'), findsOneWidget);
+      expect(tester.widget<ElevatedButton>(
+        find.widgetWithText(ElevatedButton, 'Check-In'),
+      ).onPressed, isNull);
     });
   });
 

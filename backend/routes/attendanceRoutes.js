@@ -1,8 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/db');
-const { resolveActor, isManagerRole } = require('./userRoutes');
+const { resolveActor, resolveAuthenticatedUser, isManagerRole } = require('./userRoutes');
 
+const MAX_PHOTO_BYTES = 900 * 1024;
 let attendanceSchemaInitialized = false;
 
 async function ensureAttendanceSchema() {
@@ -11,6 +12,15 @@ async function ensureAttendanceSchema() {
     await pool.query(
       "ALTER TABLE attendances MODIFY COLUMN status ENUM('hadir','terlambat','izin','sakit','alfa') NOT NULL DEFAULT 'alfa'"
     );
+    const [columns] = await pool.query('SHOW COLUMNS FROM attendances');
+    const missingPhotos = ['checkin_photo', 'checkout_photo'].filter(
+      (name) => !columns.some((column) => column.Field === name)
+    );
+    if (missingPhotos.length > 0) {
+      await pool.query(
+        'ALTER TABLE attendances ' + missingPhotos.map((name) => `ADD COLUMN ${name} MEDIUMBLOB NULL`).join(', ')
+      );
+    }
     await pool.query(`
       CREATE TABLE IF NOT EXISTS attendance_corrections (
         id BIGINT(20) NOT NULL AUTO_INCREMENT,
@@ -66,11 +76,93 @@ function formatAttendanceRow(row) {
     checkout_time: formatTimeHHMM(row.checkout_at),
     durasi_kerja: row.durasi_kerja != null ? Number(row.durasi_kerja) : null,
     status: row.status || 'alfa',
+    has_checkin_evidence: Boolean(row.has_checkin_evidence),
+    has_checkout_evidence: Boolean(row.has_checkout_evidence),
     catatan_admin: row.catatan_admin || null,
     corrections_count: row.corrections_count != null ? Number(row.corrections_count) : 0,
     created_at: row.created_at ? new Date(row.created_at).toISOString() : null,
   };
 }
+
+const attendanceFields = `a.id, a.sales_id, a.tanggal, a.checkin_at, a.checkout_at,
+  a.durasi_kerja, a.status, a.catatan_admin, a.created_at,
+  a.checkin_photo IS NOT NULL AS has_checkin_evidence,
+  a.checkout_photo IS NOT NULL AS has_checkout_evidence`;
+
+function readEvidence(body) {
+  const { latitude, longitude, photo } = body;
+  if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
+      !Number.isFinite(longitude) || longitude < -180 || longitude > 180 ||
+      typeof photo !== 'string' || photo.length > Math.ceil(MAX_PHOTO_BYTES / 3) * 4 ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(photo)) {
+    return null;
+  }
+  const bytes = Buffer.from(photo, 'base64');
+  if (bytes.length > MAX_PHOTO_BYTES || bytes.toString('base64') !== photo || !photoMimeType(bytes)) {
+    return null;
+  }
+  return { latitude, longitude, bytes };
+}
+
+function photoMimeType(bytes) {
+  if (bytes.length > 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff &&
+      bytes[bytes.length - 2] === 0xff && bytes[bytes.length - 1] === 0xd9) {
+    return 'image/jpeg';
+  }
+  if (bytes.length > 20 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) {
+    return 'image/png';
+  }
+  return null;
+}
+
+async function authenticateAttendance(req, res, next) {
+  try {
+    const actor = await resolveAuthenticatedUser(req);
+    if (!actor || String(actor.role).toLowerCase() !== 'sales' ||
+        !actor.is_active || ['nonaktif', 'ditangguhkan'].includes(actor.membership_status) ||
+        Number(actor.id) !== Number(req.body?.sales_id)) {
+      return res.status(403).json({ message: 'Absensi hanya tersedia untuk akun Sales aktif yang sedang masuk.' });
+    }
+    const evidence = readEvidence(req.body);
+    if (!evidence) {
+      return res.status(400).json({ message: 'Unggah foto JPG atau PNG maksimal 900 KB dan sertakan lokasi yang valid.' });
+    }
+    req.attendance = { actor, evidence };
+    return next();
+  } catch (error) {
+    console.error('[Attendance authentication] Error:', error);
+    return res.status(500).json({ message: 'Gagal memverifikasi sesi absensi.' });
+  }
+}
+
+router.get('/:id/evidence/:phase', async (req, res) => {
+  try {
+    const actor = await resolveAuthenticatedUser(req);
+    if (!actor || !actor.is_active) {
+      return res.status(403).json({ message: 'Sesi tidak diizinkan melihat bukti absensi.' });
+    }
+    const id = Number(req.params.id);
+    const phase = req.params.phase;
+    if (!Number.isSafeInteger(id) || id <= 0 || !['checkin', 'checkout'].includes(phase)) {
+      return res.status(400).json({ message: 'Bukti absensi tidak valid.' });
+    }
+    await ensureAttendanceSchema();
+    const [rows] = await pool.query(
+      `SELECT ${phase}_photo AS photo, ${phase}_lat AS latitude, ${phase}_lng AS longitude
+       FROM attendances WHERE id = ? AND (? OR sales_id = ?) LIMIT 1`,
+      [id, isManagerRole(actor), actor.id]
+    );
+    if (!rows[0]?.photo) {
+      return res.status(404).json({ message: 'Bukti absensi tidak ditemukan.' });
+    }
+    const { photo, latitude, longitude } = rows[0];
+    res.set('Cache-Control', 'no-store');
+    return res.json({ photo: photo.toString('base64'), latitude: Number(latitude), longitude: Number(longitude) });
+  } catch (error) {
+    console.error('[GET attendance evidence] Error:', error);
+    return res.status(500).json({ message: 'Gagal memuat bukti absensi.' });
+  }
+});
 
 // --------------------------------------------------------
 // 1. GET /api/attendances
@@ -82,7 +174,7 @@ router.get('/', async (req, res) => {
     const { sales_id, tanggal, start_date, end_date, status, search } = req.query;
 
     let query = `
-      SELECT a.*,
+      SELECT ${attendanceFields},
              u.name AS sales_name,
              (SELECT COUNT(*) FROM attendance_corrections ac WHERE ac.attendance_id = a.id) AS corrections_count
       FROM attendances a
@@ -148,7 +240,7 @@ router.get('/today/:sales_id', async (req, res) => {
     }
 
     const [rows] = await pool.query(
-      `SELECT a.*, u.name AS sales_name,
+      `SELECT ${attendanceFields}, u.name AS sales_name,
               (SELECT COUNT(*) FROM attendance_corrections ac WHERE ac.attendance_id = a.id) AS corrections_count
        FROM attendances a
        JOIN users u ON a.sales_id = u.id
@@ -181,39 +273,24 @@ router.get('/today/:sales_id', async (req, res) => {
 // 3. POST /api/attendances/checkin
 //    Validasi: akun Sales harus aktif, satu record per tanggal per sales
 // --------------------------------------------------------
-router.post('/checkin', async (req, res) => {
+router.post('/checkin', authenticateAttendance, async (req, res) => {
+  let conn;
   try {
     await ensureAttendanceSchema();
-    const { sales_id, sales_email, catatan } = req.body;
-
-    let salesUser = null;
-    if (sales_id) {
-      const [uRows] = await pool.query(
-        'SELECT * FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1',
-        [Number(sales_id)]
-      );
-      if (uRows.length > 0) salesUser = uRows[0];
+    const { catatan } = req.body;
+    const { actor: salesUser, evidence } = req.attendance;
+    conn = await pool.getConnection();
+    await conn.beginTransaction();
+    const [activeUsers] = await conn.query(
+      "SELECT id FROM users WHERE id = ? AND deleted_at IS NULL AND is_active = 1 AND role = 'sales' " +
+      "AND membership_status = 'aktif' FOR UPDATE",
+      [salesUser.id]
+    );
+    if (activeUsers.length === 0) {
+      return res.status(403).json({ message: 'Akun Sales sudah tidak aktif.' });
     }
-    if (!salesUser && sales_email) {
-      const [uRows] = await pool.query(
-        'SELECT * FROM users WHERE LOWER(email) = ? AND deleted_at IS NULL LIMIT 1',
-        [String(sales_email).trim().toLowerCase()]
-      );
-      if (uRows.length > 0) salesUser = uRows[0];
-    }
-
-    if (!salesUser) {
-      return res.status(404).json({ message: 'Data akun Sales tidak ditemukan.' });
-    }
-
-    if (salesUser.is_active !== 1 && salesUser.is_active !== true) {
-      return res.status(403).json({
-        message: 'Akun Sales sedang nonaktif atau ditangguhkan sehingga tidak dapat melakukan absensi.',
-      });
-    }
-
-    const [existingRows] = await pool.query(
-      'SELECT * FROM attendances WHERE sales_id = ? AND tanggal = CURDATE() LIMIT 1',
+    const [existingRows] = await conn.query(
+      `SELECT ${attendanceFields} FROM attendances a WHERE sales_id = ? AND tanggal = CURDATE() LIMIT 1`,
       [salesUser.id]
     );
 
@@ -225,18 +302,23 @@ router.post('/checkin', async (req, res) => {
     }
 
     // Tentukan status hadir vs terlambat berdasarkan waktu server (batas masuk 08:30)
-    const [timeInfo] = await pool.query(
+    const [timeInfo] = await conn.query(
       'SELECT HOUR(NOW()) AS hr, MINUTE(NOW()) AS mn'
     );
     const hr = Number(timeInfo[0].hr);
     const mn = Number(timeInfo[0].mn);
     const statusMasuk = hr > 8 || (hr === 8 && mn > 30) ? 'terlambat' : 'hadir';
 
-    const [insertResult] = await pool.query(
-      `INSERT INTO attendances (sales_id, tanggal, checkin_at, status, catatan_admin, created_at, updated_at)
-       VALUES (?, CURDATE(), NOW(), ?, ?, NOW(), NOW())`,
-      [salesUser.id, statusMasuk, catatan ? String(catatan).trim() : null]
+    const [insertResult] = await conn.query(
+      `INSERT INTO attendances (sales_id, tanggal, checkin_at, status, catatan_admin,
+                                checkin_lat, checkin_lng, checkin_photo, created_at, updated_at)
+       VALUES (?, CURDATE(), NOW(), ?, ?, ?, ?, ?, NOW(), NOW())`,
+      [salesUser.id, statusMasuk, catatan ? String(catatan).trim() : null,
+        evidence.latitude, evidence.longitude, evidence.bytes]
     );
+    await conn.commit();
+    conn.release();
+    conn = null;
 
     try {
       await pool.query(
@@ -251,7 +333,7 @@ router.post('/checkin', async (req, res) => {
     } catch (_) {}
 
     const [createdRows] = await pool.query(
-      `SELECT a.*, u.name AS sales_name, 0 AS corrections_count
+      `SELECT ${attendanceFields}, u.name AS sales_name, 0 AS corrections_count
        FROM attendances a
        JOIN users u ON a.sales_id = u.id
        WHERE a.id = ? LIMIT 1`,
@@ -268,39 +350,29 @@ router.post('/checkin', async (req, res) => {
     return res.status(500).json({
       message: 'Gagal melakukan check-in: ' + error.message,
     });
+  } finally {
+    if (conn) {
+      try {
+        await conn.rollback();
+      } catch (error) {
+        console.error('[Attendance rollback] Error:', error);
+      } finally {
+        conn.release();
+      }
+    }
   }
 });
 
 // --------------------------------------------------------
 // 4. POST /api/attendances/checkout
 // --------------------------------------------------------
-router.post('/checkout', async (req, res) => {
+router.post('/checkout', authenticateAttendance, async (req, res) => {
   try {
     await ensureAttendanceSchema();
-    const { sales_id, sales_email } = req.body;
-
-    let salesUser = null;
-    if (sales_id) {
-      const [uRows] = await pool.query(
-        'SELECT * FROM users WHERE id = ? AND deleted_at IS NULL LIMIT 1',
-        [Number(sales_id)]
-      );
-      if (uRows.length > 0) salesUser = uRows[0];
-    }
-    if (!salesUser && sales_email) {
-      const [uRows] = await pool.query(
-        'SELECT * FROM users WHERE LOWER(email) = ? AND deleted_at IS NULL LIMIT 1',
-        [String(sales_email).trim().toLowerCase()]
-      );
-      if (uRows.length > 0) salesUser = uRows[0];
-    }
-
-    if (!salesUser) {
-      return res.status(404).json({ message: 'Data akun Sales tidak ditemukan.' });
-    }
+    const { actor: salesUser, evidence } = req.attendance;
 
     const [existingRows] = await pool.query(
-      'SELECT * FROM attendances WHERE sales_id = ? AND tanggal = CURDATE() LIMIT 1',
+      `SELECT ${attendanceFields} FROM attendances a WHERE sales_id = ? AND tanggal = CURDATE() LIMIT 1`,
       [salesUser.id]
     );
 
@@ -333,10 +405,15 @@ router.post('/checkout', async (req, res) => {
       return res.status(400).json({ message: 'Waktu check-out tidak boleh lebih awal dari check-in.' });
     }
 
-    await pool.query(
-      `UPDATE attendances SET checkout_at = NOW(), durasi_kerja = ?, updated_at = NOW() WHERE id = ?`,
-      [durasimenit, record.id]
+    const [result] = await pool.query(
+      `UPDATE attendances SET checkout_at = NOW(), durasi_kerja = ?, updated_at = NOW(),
+                              checkout_lat = ?, checkout_lng = ?, checkout_photo = ?
+       WHERE id = ? AND checkout_at IS NULL`,
+      [durasimenit, evidence.latitude, evidence.longitude, evidence.bytes, record.id]
     );
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ message: 'Anda sudah melakukan check-out hari ini.' });
+    }
 
     try {
       await pool.query(
@@ -351,7 +428,7 @@ router.post('/checkout', async (req, res) => {
     } catch (_) {}
 
     const [updatedRows] = await pool.query(
-      `SELECT a.*, u.name AS sales_name,
+      `SELECT ${attendanceFields}, u.name AS sales_name,
               (SELECT COUNT(*) FROM attendance_corrections ac WHERE ac.attendance_id = a.id) AS corrections_count
        FROM attendances a
        JOIN users u ON a.sales_id = u.id
@@ -403,7 +480,10 @@ router.put('/:id/correct', async (req, res) => {
       });
     }
 
-    const [existingRows] = await conn.query('SELECT * FROM attendances WHERE id = ? LIMIT 1', [attId]);
+    const [existingRows] = await conn.query(
+      `SELECT ${attendanceFields} FROM attendances a WHERE id = ? LIMIT 1`,
+      [attId]
+    );
     if (existingRows.length === 0) {
       conn.release();
       return res.status(404).json({ message: 'Data absensi tidak ditemukan.' });
@@ -492,7 +572,7 @@ router.put('/:id/correct', async (req, res) => {
     await conn.commit();
 
     const [updatedRows] = await pool.query(
-      `SELECT a.*, u.name AS sales_name,
+      `SELECT ${attendanceFields}, u.name AS sales_name,
               (SELECT COUNT(*) FROM attendance_corrections ac WHERE ac.attendance_id = a.id) AS corrections_count
        FROM attendances a
        JOIN users u ON a.sales_id = u.id
