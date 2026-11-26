@@ -6,9 +6,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../constants.dart';
-import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/attendance_service.dart';
+import '../../widgets/report_date_filter.dart';
 
 class FR08AbsensiScreen extends StatefulWidget {
   const FR08AbsensiScreen({Key? key}) : super(key: key);
@@ -19,7 +19,7 @@ class FR08AbsensiScreen extends StatefulWidget {
 
 class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
   List<AttendanceRecord> _records = [];
-  List<UserModel> _salesList = [];
+  Map<int, String> _salesOptions = {};
   AttendanceRecord? _todayRecord;
   bool _isLoading = true;
   bool _isSubmitting = false;
@@ -58,19 +58,24 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
       today = await AttendanceService.fetchTodayAttendance(user!.id!);
     }
 
-    List<UserModel> salesUsers = [];
-    if (isManager) {
+    final salesOptions = <int, String>{};
+    if (user?.isSuperAdmin == true) {
+      for (final record in fetched) {
+        salesOptions.putIfAbsent(record.salesId, () => record.salesName);
+      }
+    } else if (isManager) {
       final allUsers = await authProvider.getAllUsers();
-      salesUsers = allUsers.where((u) => u.isSales && u.id != null).toList();
+      for (final user in allUsers.where((user) => user.isSales && user.id != null)) {
+        salesOptions[user.id!] = user.name;
+      }
     }
 
     if (mounted) {
       setState(() {
         _records = fetched;
         _todayRecord = today;
-        _salesList = salesUsers;
-        if (_selectedSalesFilter != null &&
-            !_salesList.any((sales) => sales.id == _selectedSalesFilter)) {
+        _salesOptions = salesOptions;
+        if (!_salesOptions.containsKey(_selectedSalesFilter)) {
           _selectedSalesFilter = null;
         }
         _isLoading = false;
@@ -78,7 +83,7 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
     }
   }
 
-  List<AttendanceRecord> get _filteredRecords {
+  List<AttendanceRecord> _filteredRecords({required bool isOwner}) {
     return _records.where((r) {
       if (_statusFilter != 'Semua' &&
           r.statusLabel.toLowerCase() != _statusFilter.toLowerCase()) {
@@ -92,16 +97,7 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
           r.tanggal != _selectedDateFilter) {
         return false;
       }
-      final period = _selectedPeriod;
-      if (period != null) {
-        final date = DateTime.tryParse(r.tanggal);
-        if (date == null ||
-            date.isBefore(period.start) ||
-            date.isAfter(period.end)) {
-          return false;
-        }
-      }
-      return true;
+      return !isOwner || ReportDateFilter.includes(r.tanggal, _selectedPeriod);
     }).toList();
   }
 
@@ -535,7 +531,7 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
     final user = authProvider.currentUser;
     final isManager = user?.isManager ?? false;
     final isOwner = user?.isSuperAdmin ?? false;
-    final filtered = _filteredRecords;
+    final filtered = _filteredRecords(isOwner: isOwner);
     final summaryRecords = isOwner ? filtered : _records;
 
     final hadirCount = summaryRecords.where((r) => r.status == 'hadir').length;
@@ -902,10 +898,10 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
                   ),
                   items: [
                     const DropdownMenuItem<int?>(value: null, child: Text('Semua Sales')),
-                    ..._salesList.map(
-                      (s) => DropdownMenuItem<int?>(
-                        value: s.id,
-                        child: Text(s.name, overflow: TextOverflow.ellipsis),
+                    ..._salesOptions.entries.map(
+                      (sales) => DropdownMenuItem<int?>(
+                        value: sales.key,
+                        child: Text(sales.value, overflow: TextOverflow.ellipsis),
                       ),
                     ),
                   ],
@@ -948,44 +944,14 @@ class _FR08AbsensiScreenState extends State<FR08AbsensiScreen> {
           ),
           if (isOwner) ...[
             const SizedBox(height: 8),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.date_range_outlined, size: 18),
-              label: Text(_selectedPeriod == null
-                  ? 'Pilih Rentang Tanggal'
-                  : '${MaterialLocalizations.of(context).formatCompactDate(_selectedPeriod!.start)} – '
-                      '${MaterialLocalizations.of(context).formatCompactDate(_selectedPeriod!.end)}'),
-              onPressed: _pickAttendancePeriod,
+            ReportDateFilter(
+              range: _selectedPeriod,
+              onChanged: (range) => setState(() => _selectedPeriod = range),
             ),
           ],
         ],
       ),
     );
-  }
-
-  Future<void> _pickAttendancePeriod() async {
-    final now = DateTime.now();
-    var firstDate = DateTime(now.year - 5);
-    var lastDate = DateTime(now.year + 1, 12, 31);
-    for (final record in _records) {
-      final date = DateTime.tryParse(record.tanggal);
-      if (date == null) continue;
-      if (date.isBefore(firstDate)) firstDate = date;
-      if (date.isAfter(lastDate)) lastDate = date;
-    }
-    final picked = await showDateRangePicker(
-      context: context,
-      firstDate: firstDate,
-      lastDate: lastDate,
-      initialDateRange: _selectedPeriod != null &&
-              !_selectedPeriod!.start.isBefore(firstDate) &&
-              !_selectedPeriod!.end.isAfter(lastDate)
-          ? _selectedPeriod
-          : null,
-      helpText: 'Pilih Rentang Tanggal',
-    );
-    if (picked != null && mounted) {
-      setState(() => _selectedPeriod = picked);
-    }
   }
 
   Widget _statChip(String label, String val, Color fg, Color bg) {

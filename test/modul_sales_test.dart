@@ -506,6 +506,9 @@ void main() {
       });
       await tester.pumpAndSettle();
 
+      expect(find.text('Daftar Kehadiran Sales (0)'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ChoiceChip, '7 Hari Terakhir'));
+      await tester.pumpAndSettle();
       expect(find.text('Daftar Kehadiran Sales (2)'), findsOneWidget);
       await tester.tap(find.widgetWithText(ChoiceChip, 'Terlambat'));
       await tester.pumpAndSettle();
@@ -515,11 +518,44 @@ void main() {
 
       await tester.tap(find.text('Reset Filter'));
       await tester.pumpAndSettle();
-      expect(find.text('Daftar Kehadiran Sales (2)'), findsOneWidget);
+      expect(find.text('Daftar Kehadiran Sales (0)'), findsOneWidget);
 
       await tester.tap(find.text('Pilih Rentang Tanggal'));
       await tester.pumpAndSettle();
       expect(find.byType(DateRangePickerDialog), findsOneWidget);
+    });
+
+    testWidgets('FR05 Owner defaults to today and totals the selected product', (tester) async {
+      final provider = AuthProvider();
+      await tester.runAsync(() async {
+        expect(await provider.login('owner@majubersama.com', 'password123'), isTrue);
+        await tester.pumpWidget(
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: provider,
+            child: const MaterialApp(home: FR05PendapatanScreen()),
+          ),
+        );
+      });
+      await tester.pumpAndSettle();
+
+      expect(find.text('Daftar Catatan Penjualan (1)'), findsOneWidget);
+      expect(find.textContaining('Warung Berkah Jaya'), findsOneWidget);
+      expect(find.textContaining('Toko Sinar Makmur'), findsNothing);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, '7 Hari Terakhir'));
+      await tester.pumpAndSettle();
+      expect(find.text('Daftar Catatan Penjualan (3)'), findsOneWidget);
+      await tester.tap(find.text('Semua Produk'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Plastik Kresek 1kg').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Daftar Catatan Penjualan (1)'), findsOneWidget);
+      expect(find.text(TransactionService.formatRp(150000)), findsOneWidget);
+
+      await tester.tap(find.text('Reset Filter'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Warung Berkah Jaya'), findsOneWidget);
+      expect(find.text('Semua Produk'), findsOneWidget);
     });
 
     testWidgets('FR08 renders Check-In and Check-Out buttons for Sales', (WidgetTester tester) async {

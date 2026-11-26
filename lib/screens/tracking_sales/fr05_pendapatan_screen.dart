@@ -3,9 +3,9 @@ import 'package:provider/provider.dart';
 import '../../constants.dart';
 import '../../models/user_model.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/auth_service.dart';
 import '../../services/inventory_service.dart';
 import '../../services/transaction_service.dart';
+import '../../widgets/report_date_filter.dart';
 
 class FR05PendapatanScreen extends StatefulWidget {
   const FR05PendapatanScreen({Key? key}) : super(key: key);
@@ -24,6 +24,7 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
   int? _salesFilterId;
   int? _productFilterId;
   String? _dateFilter;
+  DateTimeRange? _ownerPeriod;
 
   @override
   void initState() {
@@ -33,18 +34,22 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
 
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
-    final user = context.read<AuthProvider>().currentUser;
+    final authProvider = context.read<AuthProvider>();
+    final user = authProvider.currentUser;
     final isManager = user?.isManager ?? false;
+    final isOwner = user?.isSuperAdmin ?? false;
 
     final txs = await TransactionService.fetchTransactions(
       salesId: isManager ? null : user?.id,
     );
-    final prods = await InventoryService.fetchProducts(salesId: user?.id);
+    final prods = isOwner
+        ? <ProductItem>[]
+        : await InventoryService.fetchProducts(salesId: user?.id);
 
     List<UserModel> salesUsers = [];
-    if (isManager) {
-      final allUsers = await AuthService().getAllUsers();
-      salesUsers = allUsers.where((u) => u.isSales).toList();
+    if (isManager && !isOwner) {
+      final allUsers = await authProvider.getAllUsers();
+      salesUsers = allUsers.where((u) => u.isSales && u.id != null).toList();
     }
 
     if (mounted) {
@@ -52,12 +57,26 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
         _transactions = txs;
         _products = prods;
         _salesList = salesUsers;
+        final selectedSales = _salesFilterId;
+        if (selectedSales != null &&
+            !(isOwner
+                ? txs.any((tx) => tx.salesId == selectedSales)
+                : salesUsers.any((sales) => sales.id == selectedSales))) {
+          _salesFilterId = null;
+        }
+        final selectedProduct = _productFilterId;
+        if (selectedProduct != null &&
+            !(isOwner
+                ? txs.any((tx) => tx.items.any((item) => item.productId == selectedProduct))
+                : prods.any((product) => product.id == selectedProduct))) {
+          _productFilterId = null;
+        }
         _isLoading = false;
       });
     }
   }
 
-  List<SalesTransaction> get _filteredTransactions {
+  List<SalesTransaction> _filteredTransactions({required bool isOwner}) {
     return _transactions.where((t) {
       if (_statusFilter != 'Semua' &&
           t.statusLabel.toLowerCase() != _statusFilter.toLowerCase()) {
@@ -73,7 +92,7 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
       if (_dateFilter != null && _dateFilter!.isNotEmpty && t.tanggal != _dateFilter) {
         return false;
       }
-      return true;
+      return !isOwner || ReportDateFilter.includes(t.tanggal, _ownerPeriod);
     }).toList();
   }
 
@@ -610,11 +629,27 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
   Widget build(BuildContext context) {
     final user = context.watch<AuthProvider>().currentUser;
     final isManager = user?.isManager ?? false;
-    final filtered = _filteredTransactions;
+    final isOwner = user?.isSuperAdmin ?? false;
+    final filtered = _filteredTransactions(isOwner: isOwner);
+    final salesOptions = isOwner
+        ? {for (final tx in _transactions) tx.salesId: tx.salesName}
+        : {for (final sales in _salesList) sales.id!: sales.name};
+    final productOptions = isOwner
+        ? {
+            for (final tx in _transactions)
+              for (final item in tx.items) item.productId: item.namaBarang,
+          }
+        : {for (final product in _products) product.id: product.namaBarang};
+    final productForOmzet = isOwner ? _productFilterId : null;
 
     final approvedOmzet = filtered
         .where((t) => t.statusVerifikasi == StatusVerifikasiTransaksi.disetujui)
-        .fold<int>(0, (sum, t) => sum + t.total);
+        .fold<int>(0, (sum, transaction) {
+          if (productForOmzet == null) return sum + transaction.total;
+          return sum + transaction.items
+              .where((item) => item.productId == productForOmzet)
+              .fold<int>(0, (subtotal, item) => subtotal + item.subtotal);
+        });
     final pendingCount =
         filtered.where((t) => t.statusVerifikasi == StatusVerifikasiTransaksi.menunggu).length;
 
@@ -669,12 +704,38 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
                   ),
                   const SizedBox(height: 14),
 
+                  if (isOwner) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Filter Data', style: TextStyle(fontWeight: FontWeight.bold)),
+                        TextButton(
+                          onPressed: _ownerPeriod == null && _salesFilterId == null &&
+                                  _productFilterId == null && _statusFilter == 'Semua'
+                              ? null
+                              : () => setState(() {
+                                    _ownerPeriod = null;
+                                    _salesFilterId = null;
+                                    _productFilterId = null;
+                                    _statusFilter = 'Semua';
+                                  }),
+                          child: const Text('Reset Filter'),
+                        ),
+                      ],
+                    ),
+                    ReportDateFilter(
+                      range: _ownerPeriod,
+                      onChanged: (range) => setState(() => _ownerPeriod = range),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   if (isManager) ...[
                     Row(
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<int?>(
-                            initialValue: _salesFilterId,
+                            key: ValueKey(('sales', _salesFilterId)),
+                            initialValue: salesOptions.containsKey(_salesFilterId) ? _salesFilterId : null,
                             isExpanded: true,
                             decoration: InputDecoration(
                               labelText: 'Sales',
@@ -685,10 +746,10 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
                             ),
                             items: [
                               const DropdownMenuItem<int?>(value: null, child: Text('Semua Sales')),
-                              ..._salesList.map(
-                                (s) => DropdownMenuItem<int?>(
-                                  value: s.id,
-                                  child: Text(s.name, overflow: TextOverflow.ellipsis),
+                              ...salesOptions.entries.map(
+                                (sales) => DropdownMenuItem<int?>(
+                                  value: sales.key,
+                                  child: Text(sales.value, overflow: TextOverflow.ellipsis),
                                 ),
                               ),
                             ],
@@ -698,7 +759,8 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: DropdownButtonFormField<int?>(
-                            initialValue: _productFilterId,
+                            key: ValueKey(('product', _productFilterId)),
+                            initialValue: productOptions.containsKey(_productFilterId) ? _productFilterId : null,
                             isExpanded: true,
                             decoration: InputDecoration(
                               labelText: 'Produk',
@@ -709,10 +771,10 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
                             ),
                             items: [
                               const DropdownMenuItem<int?>(value: null, child: Text('Semua Produk')),
-                              ..._products.map(
-                                (p) => DropdownMenuItem<int?>(
-                                  value: p.id,
-                                  child: Text(p.namaBarang, overflow: TextOverflow.ellipsis),
+                              ...productOptions.entries.map(
+                                (product) => DropdownMenuItem<int?>(
+                                  value: product.key,
+                                  child: Text(product.value, overflow: TextOverflow.ellipsis),
                                 ),
                               ),
                             ],
@@ -743,7 +805,7 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
                           ),
                         ),
                       ),
-                      OutlinedButton.icon(
+                      if (!isOwner) OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
                           backgroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -758,7 +820,7 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
                             firstDate: DateTime(2024),
                             lastDate: DateTime(2030),
                           );
-                          if (picked != null) {
+                          if (picked != null && mounted) {
                             setState(() {
                               _dateFilter =
                                   '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
@@ -766,7 +828,7 @@ class _FR05PendapatanScreenState extends State<FR05PendapatanScreen> {
                           }
                         },
                       ),
-                      if (_dateFilter != null)
+                      if (!isOwner && _dateFilter != null)
                         IconButton(
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: () => setState(() => _dateFilter = null),
